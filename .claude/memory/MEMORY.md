@@ -1,0 +1,1 @@
+- [Coverage policy](feedback_coverage.md) — 90%未満で確認、80%未満で要対応

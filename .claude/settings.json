@@ -1,0 +1,22 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd /home/amag/work/sandbox/telescope-like-tool && git diff --name-only --diff-filter=ACM HEAD -- '*.go' | xargs -r /home/amag/go/bin/goimports -w 2>/dev/null || true",
+            "timeout": 30,
+            "statusMessage": "Running goimports..."
+          },
+          {
+            "type": "command",
+            "command": "cd /home/amag/work/sandbox/telescope-like-tool && /home/amag/go/bin/golangci-lint run ./... 2>/dev/null || true",
+            "timeout": 60,
+            "statusMessage": "Running golangci-lint..."
+          }
+        ]
+      }
+    ]
+  }
+}
