@@ -1,0 +1,46 @@
+  docs/bag/bag1.txt                                                                             |       "strings"
+  docs/bag/bag2.txt                                                                             | )     "testing"
+  docs/bag/bag1.txt                                                                             |       "strings"
+  docs/bag/bag2.txt                                                                             | )     "testing"
+  go.mod                                                                                        |
+  go.sum                                                                                        | )     "github.com/stretchr/testify/assert"
+  internal/finder/finder.go                                                                     |       "github.com/stretchr/testify/require"
+  internal/finder/fuzzy.go                                                                      | )
+  internal/finder/fuzzy_test.go                                                                 |
+  internal/grep/grep.go                                                                         | func TestParseRgJSON(t *testing.T) {
+> internal/grep/grep_test.go                                                                    |       tests := []struct {
+  internal/preview/preview.go                                                                   | )             name    string
+  internal/preview/preview_test.go                                                              |               input   string
+  internal/ui/model.go                                                                          | // ReadFile はwant    []Match
+  internal/ui/model_test.go                                                                     | // maxLines がwantErr bool
+  main.go                                                                                       | func R}{
+                                                                                                | {"typedata, er{
+                                                                                                | }     if err != nil { name:  "single match",
+                                                                                                |               return "input: `{"type":"match","data":{"path":{"text":"main.go"},"lines":{"text":"func main()\n"},"l                                                                          | func T}
+                                                                                                | {"typecontent := strinwant: []Match{
+                                                                                                |       if content == "" {      {File: "main.go", Line: 10, Text: "func main()"},
+                                                                                                | {"typetests :=return "},
+                                                                                                |       }       },
+                                                                                                | {"typeif maxLi{
+                                                                                                |               return cname: "multiple matches",
+                                                                                                | {"type}               input: `{"type":"match","data":{"path":{"text":"a.go"},"lines":{"text":"foo\n"},"line_number"                                                                          |
+                                                                                                | {"type":"match","data":{"path":{"text":"b.go"},"lines":{"text":"bar\n"},"line_number":5,"subm
+                                                                                                | }     if len(lines) > want: []Match{
+                                                                                                |       return slines = lines[:m{File: "a.go", Line: 1, Text: "foo"},
+                                                                                                | }     }                       {File: "b.go", Line: 5, Text: "bar"},
+                                                                                                |       return strings.J},
+                                                                                                | }             },
+                                                                                                |               {
+                                                                                                | // Highlight はファイ name:  "non-match types are skipped",
+                                                                                                | // 空文字列の場合はそ input: `{"type":"begin","data":{"path":{"text":"main.go"}}}`,
+                                                                                                | func Highlight(path stwant:  nil,
+                                                                                                |       if conte},
+                                                                                                |               {
+                                                                                                |       }               name:  "empty input",
+                                                                                                |                       input: "",
+                                                                                                |       lexer := lexers.want:  nil,
+                                                                                                |       if lexer},
+                                                                                                |               {
+                                                                                                |       }               name:  "invalid JSON is skipped",
+                                                                                                |                       input: `{not valid json}`,
+                                                                                                |                       want:  nil,
