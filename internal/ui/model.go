@@ -131,13 +131,18 @@ func (m Model) delegateToPane(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) switchMode() (tea.Model, tea.Cmd) {
 	if m.mode == ModeFinder {
 		m.mode = ModeGrep
+		m.finderPane.Blur()
 		m.grepPane.Reset()
-	} else {
-		m.mode = ModeFinder
-		m.finderPane.Reset()
+		cmd := m.grepPane.Focus()
+		m.updatePreview()
+		return m, cmd
 	}
+	m.mode = ModeFinder
+	m.grepPane.Blur()
+	m.finderPane.Reset()
+	cmd := m.finderPane.Focus()
 	m.updatePreview()
-	return m, nil
+	return m, cmd
 }
 
 // handleEnter は選択アイテムでエディタを起動する。
@@ -206,16 +211,22 @@ func (m Model) View() string {
 	if m.mode == ModeGrep {
 		modeLabel = "Grep"
 	}
-	header := fmt.Sprintf("[%s] > %s", modeLabel, pane.Query())
+	var inputView string
+	if m.mode == ModeGrep {
+		inputView = m.grepPane.TextInput().View()
+	} else {
+		inputView = m.finderPane.TextInput().View()
+	}
+	header := headerStyle.Render(modeLabelStyle.Render("["+modeLabel+"]") + " " + inputView)
 
 	// エラー表示
 	if pane.Err() != nil {
-		return header + "\n" + fmt.Sprintf("error: %s", pane.Err().Error()) + "\n"
+		return header + "\n" + errorStyle.Render(fmt.Sprintf("error: %s", pane.Err().Error())) + "\n"
 	}
 
 	// ローディング表示
 	if pane.IsLoading() {
-		return header + "\n" + "loading...\n"
+		return header + "\n" + loadingStyle.Render("loading...") + "\n"
 	}
 
 	// レイアウト計算

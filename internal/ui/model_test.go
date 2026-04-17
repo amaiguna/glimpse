@@ -212,7 +212,7 @@ func TestPreviewInGrepMode(t *testing.T) {
 
 func TestViewContainsQuery(t *testing.T) {
 	m := NewModel()
-	m.finderPane.query = "main"
+	m.finderPane.textInput.SetValue("main")
 	m.width = 80
 	m.height = 24
 

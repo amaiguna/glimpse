@@ -51,6 +51,7 @@ func TestFinderCursorMovement(t *testing.T) {
 			f := NewFinderModel()
 			f.allFiles = tt.items
 			f.items = tt.items
+			f.loading = false
 
 			var pane Pane = f
 			for _, key := range tt.keys {
@@ -66,6 +67,7 @@ func TestFinderCharacterInput(t *testing.T) {
 	f := NewFinderModel()
 	f.allFiles = []string{"main.go", "go.mod"}
 	f.items = f.allFiles
+	f.loading = false
 
 	var pane Pane = f
 	pane, _ = pane.Update(keyMsg("m"))
@@ -80,6 +82,7 @@ func TestFinderBackspace(t *testing.T) {
 	f := NewFinderModel()
 	f.allFiles = []string{"main.go", "go.mod"}
 	f.items = f.allFiles
+	f.loading = false
 
 	var pane Pane = f
 	pane, _ = pane.Update(keyMsg("m"))
@@ -94,6 +97,7 @@ func TestFinderCursorClampsOnFilter(t *testing.T) {
 	f.allFiles = []string{"main.go", "go.mod", "README.md"}
 	f.items = f.allFiles
 	f.cursor = 2
+	f.loading = false
 
 	var pane Pane = f
 	pane, _ = pane.Update(keyMsg("m"))
@@ -106,7 +110,6 @@ func TestFinderCursorClampsOnFilter(t *testing.T) {
 
 func TestFinderFilesLoadedMsg(t *testing.T) {
 	f := NewFinderModel()
-	f.loading = true
 
 	pane, _ := f.Update(FilesLoadedMsg{Items: []string{"a.go", "b.go"}})
 	got := pane.(*FinderModel)
@@ -118,8 +121,7 @@ func TestFinderFilesLoadedMsg(t *testing.T) {
 
 func TestFinderFilesLoadedMsgWithQuery(t *testing.T) {
 	f := NewFinderModel()
-	f.loading = true
-	f.query = "mai"
+	f.textInput.SetValue("mai")
 
 	pane, _ := f.Update(FilesLoadedMsg{Items: []string{"main.go", "go.mod", "README.md"}})
 	got := pane.(*FinderModel)
@@ -129,7 +131,6 @@ func TestFinderFilesLoadedMsgWithQuery(t *testing.T) {
 
 func TestFinderFilesErrorMsg(t *testing.T) {
 	f := NewFinderModel()
-	f.loading = true
 
 	pane, _ := f.Update(FilesErrorMsg{Err: assert.AnError})
 	got := pane.(*FinderModel)
@@ -157,8 +158,21 @@ func TestFinderView(t *testing.T) {
 	f := NewFinderModel()
 	f.items = []string{"main.go", "go.mod"}
 	f.cursor = 0
+	f.loading = false
 
 	view := f.View()
 	assert.Contains(t, view, "> main.go")
 	assert.Contains(t, view, "  go.mod")
+}
+
+func TestFinderReset(t *testing.T) {
+	f := NewFinderModel()
+	f.allFiles = []string{"a", "b"}
+	f.textInput.SetValue("foo")
+	f.cursor = 1
+
+	f.Reset()
+	assert.Equal(t, "", f.Query())
+	assert.Equal(t, 0, f.cursor)
+	assert.Equal(t, []string{"a", "b"}, f.items)
 }

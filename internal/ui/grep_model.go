@@ -6,8 +6,9 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/amaiguna/telescope-tui/internal/grep"
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // debounceInterval は Grep モードでの入力デバウンス間隔。
@@ -16,7 +17,7 @@ const debounceInterval = 300 * time.Millisecond
 // GrepModel はライブ grep モードのペイン。
 // rg --json をデバウンス付きで実行し、結果を表示する。
 type GrepModel struct {
-	query       string
+	textInput   textinput.Model
 	items       []string // "file:line:text" 形式
 	cursor      int
 	loading     bool
@@ -26,7 +27,13 @@ type GrepModel struct {
 
 // NewGrepModel は GrepModel を初期化して返す。
 func NewGrepModel() *GrepModel {
-	return &GrepModel{}
+	ti := textinput.New()
+	ti.Placeholder = "Search pattern..."
+	ti.Focus()
+	ti.CharLimit = 256
+	return &GrepModel{
+		textInput: ti,
+	}
 }
 
 // runGrepCmd は rg 検索を非同期で実行するコマンドを返す。
@@ -64,40 +71,39 @@ func (g *GrepModel) handleKey(msg tea.KeyMsg) (Pane, tea.Cmd) {
 		if g.cursor > 0 {
 			g.cursor--
 		}
+		return g, nil
 	case tea.KeyDown:
 		if len(g.items) > 0 && g.cursor < len(g.items)-1 {
 			g.cursor++
 		}
-	case tea.KeyBackspace:
-		if len(g.query) > 0 {
-			g.query = g.query[:len(g.query)-1]
+		return g, nil
+	default:
+		// テキスト入力は textinput に委譲
+		prevQuery := g.textInput.Value()
+		var cmd tea.Cmd
+		g.textInput, cmd = g.textInput.Update(msg)
+		if g.textInput.Value() != prevQuery {
 			g.debounceTag++
 			tag := g.debounceTag
-			return g, tea.Tick(debounceInterval, func(time.Time) tea.Msg {
+			debounceCmd := tea.Tick(debounceInterval, func(time.Time) tea.Msg {
 				return debounceTickMsg{tag: tag}
 			})
+			return g, tea.Batch(cmd, debounceCmd)
 		}
-	case tea.KeyRunes:
-		g.query += string(msg.Runes)
-		g.debounceTag++
-		tag := g.debounceTag
-		return g, tea.Tick(debounceInterval, func(time.Time) tea.Msg {
-			return debounceTickMsg{tag: tag}
-		})
+		return g, cmd
 	}
-	return g, nil
 }
 
 func (g *GrepModel) handleDebounceTick(msg debounceTickMsg) (Pane, tea.Cmd) {
 	if msg.tag != g.debounceTag {
 		return g, nil
 	}
-	if g.query == "" {
+	if g.textInput.Value() == "" {
 		g.items = nil
 		return g, nil
 	}
 	g.loading = true
-	return g, runGrepCmd(g.query)
+	return g, runGrepCmd(g.textInput.Value())
 }
 
 func (g *GrepModel) View() string {
@@ -106,11 +112,11 @@ func (g *GrepModel) View() string {
 		if i > 0 {
 			b.WriteString("\n")
 		}
-		cursor := "  "
 		if i == g.cursor {
-			cursor = "> "
+			b.WriteString(selectedItemStyle.Render("> " + item))
+		} else {
+			b.WriteString(normalItemStyle.Render("  " + item))
 		}
-		b.WriteString(cursor + item)
 	}
 	return b.String()
 }
@@ -132,16 +138,29 @@ func (g *GrepModel) FilePath() string {
 	return path
 }
 
-func (g *GrepModel) Query() string   { return g.query }
+func (g *GrepModel) Query() string   { return g.textInput.Value() }
 func (g *GrepModel) IsLoading() bool { return g.loading }
 func (g *GrepModel) Err() error      { return g.err }
 
+// TextInput は入力欄の View を返す（親 Model がヘッダーに組み込む用）。
+func (g *GrepModel) TextInput() textinput.Model { return g.textInput }
+
 // Reset はモード切替時にペインの状態をリセットする。
 func (g *GrepModel) Reset() {
-	g.query = ""
+	g.textInput.SetValue("")
 	g.cursor = 0
 	g.items = nil
 	g.err = nil
+}
+
+// Focus はテキスト入力にフォーカスを当てる。
+func (g *GrepModel) Focus() tea.Cmd {
+	return g.textInput.Focus()
+}
+
+// Blur はテキスト入力のフォーカスを外す。
+func (g *GrepModel) Blur() {
+	g.textInput.Blur()
 }
 
 // --- ヘルパー関数 ---

@@ -3,8 +3,8 @@ package ui
 import (
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/amaiguna/telescope-tui/internal/grep"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -79,7 +79,7 @@ func TestGrepErrorMsg(t *testing.T) {
 func TestGrepDebounceTickMsg(t *testing.T) {
 	t.Run("タグ一致でCmdが返される", func(t *testing.T) {
 		g := NewGrepModel()
-		g.query = "foo"
+		g.textInput.SetValue("foo")
 		g.debounceTag = 5
 
 		_, cmd := g.Update(debounceTickMsg{tag: 5})
@@ -89,7 +89,7 @@ func TestGrepDebounceTickMsg(t *testing.T) {
 
 	t.Run("タグ不一致で無視される", func(t *testing.T) {
 		g := NewGrepModel()
-		g.query = "foo"
+		g.textInput.SetValue("foo")
 		g.debounceTag = 5
 
 		_, cmd := g.Update(debounceTickMsg{tag: 3})
@@ -98,7 +98,7 @@ func TestGrepDebounceTickMsg(t *testing.T) {
 
 	t.Run("クエリ空ならCmdなし", func(t *testing.T) {
 		g := NewGrepModel()
-		g.query = ""
+		g.textInput.SetValue("")
 		g.debounceTag = 5
 
 		_, cmd := g.Update(debounceTickMsg{tag: 5})
@@ -128,18 +128,18 @@ func TestGrepView(t *testing.T) {
 	g.cursor = 1
 
 	view := g.View()
-	assert.Contains(t, view, "  main.go:10:func main()")
-	assert.Contains(t, view, "> util.go:5:func helper()")
+	assert.Contains(t, view, "main.go:10:func main()")
+	assert.Contains(t, view, "util.go:5:func helper()")
 }
 
 func TestGrepReset(t *testing.T) {
 	g := NewGrepModel()
-	g.query = "foo"
+	g.textInput.SetValue("foo")
 	g.cursor = 3
 	g.items = []string{"a", "b", "c", "d"}
 
 	g.Reset()
-	assert.Equal(t, "", g.query)
+	assert.Equal(t, "", g.Query())
 	assert.Equal(t, 0, g.cursor)
 	assert.Nil(t, g.items)
 }
