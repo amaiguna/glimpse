@@ -1,6 +1,6 @@
  [Grep] > package 
 ┌──────────────────────┐┌──────────────────────────────────────────────────────┐
-│> main.go:1:package ma││line 1: some content here for testing purposes        │
+│> main.go             ││line 1: some content here for testing purposes        │
 │                      ││line 2: some content here for testing purposes        │
 │                      ││line 3: some content here for testing purposes        │
 │                      ││line 4: some content here for testing purposes        │

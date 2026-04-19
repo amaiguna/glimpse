@@ -1,25 +1,25 @@
  [Grep] > Process 
 ┌──────────────────────────────────────────────┐┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│> internal/pkg/module_00.go:3:func Process00(c││// line 1                                                                                                     │
-│  internal/pkg/module_01.go:18:func Process01(││// line 2                                                                                                     │
-│  internal/pkg/module_02.go:33:func Process02(││// line 3                                                                                                     │
-│  internal/pkg/module_03.go:48:func Process03(││// line 4                                                                                                     │
-│  internal/pkg/module_04.go:63:func Process04(││// line 5                                                                                                     │
-│  internal/pkg/module_05.go:78:func Process05(││// line 6                                                                                                     │
-│  internal/pkg/module_06.go:93:func Process06(││// line 7                                                                                                     │
-│  internal/pkg/module_07.go:108:func Process07││// line 8                                                                                                     │
-│  internal/pkg/module_08.go:123:func Process08││// line 9                                                                                                     │
-│  internal/pkg/module_09.go:138:func Process09││// line 10                                                                                                    │
-│  internal/pkg/module_10.go:153:func Process10││// line 11                                                                                                    │
-│  internal/pkg/module_11.go:168:func Process11││// line 12                                                                                                    │
-│  internal/pkg/module_12.go:183:func Process12││// line 13                                                                                                    │
-│  internal/pkg/module_13.go:198:func Process13││// line 14                                                                                                    │
-│  internal/pkg/module_14.go:213:func Process14││// line 15                                                                                                    │
-│  internal/pkg/module_15.go:228:func Process15││// line 16                                                                                                    │
-│  internal/pkg/module_16.go:243:func Process16││// line 17                                                                                                    │
-│  internal/pkg/module_17.go:258:func Process17││// line 18                                                                                                    │
-│  internal/pkg/module_18.go:273:func Process18││// line 19                                                                                                    │
-│  internal/pkg/module_19.go:288:func Process19││// line 20                                                                                                    │
+│> internal/pkg/module_00.go                   ││// line 1                                                                                                     │
+│  internal/pkg/module_01.go                   ││// line 2                                                                                                     │
+│  internal/pkg/module_02.go                   ││// line 3                                                                                                     │
+│  internal/pkg/module_03.go                   ││// line 4                                                                                                     │
+│  internal/pkg/module_04.go                   ││// line 5                                                                                                     │
+│  internal/pkg/module_05.go                   ││// line 6                                                                                                     │
+│  internal/pkg/module_06.go                   ││// line 7                                                                                                     │
+│  internal/pkg/module_07.go                   ││// line 8                                                                                                     │
+│  internal/pkg/module_08.go                   ││// line 9                                                                                                     │
+│  internal/pkg/module_09.go                   ││// line 10                                                                                                    │
+│  internal/pkg/module_10.go                   ││// line 11                                                                                                    │
+│  internal/pkg/module_11.go                   ││// line 12                                                                                                    │
+│  internal/pkg/module_12.go                   ││// line 13                                                                                                    │
+│  internal/pkg/module_13.go                   ││// line 14                                                                                                    │
+│  internal/pkg/module_14.go                   ││// line 15                                                                                                    │
+│  internal/pkg/module_15.go                   ││// line 16                                                                                                    │
+│  internal/pkg/module_16.go                   ││// line 17                                                                                                    │
+│  internal/pkg/module_17.go                   ││// line 18                                                                                                    │
+│  internal/pkg/module_18.go                   ││// line 19                                                                                                    │
+│  internal/pkg/module_19.go                   ││// line 20                                                                                                    │
 │                                              ││// line 21                                                                                                    │
 │                                              ││// line 22                                                                                                    │
 │                                              ││// line 23                                                                                                    │

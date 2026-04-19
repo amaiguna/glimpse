@@ -157,7 +157,8 @@ func (g *GrepModel) View() string {
 			b.WriteString("\n")
 		}
 		absIdx := g.offset + i
-		display := truncateToWidth(item, itemWidth)
+		displayItem, _ := parseGrepItem(item)
+		display := truncateToWidth(displayItem, itemWidth)
 		if absIdx == g.cursor {
 			b.WriteString(selectedItemStyle.Render("> " + display))
 		} else {

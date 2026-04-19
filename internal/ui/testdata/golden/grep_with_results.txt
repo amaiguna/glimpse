@@ -1,6 +1,6 @@
  [Grep] > func 
 ┌──────────────────────┐┌──────────────────────────────────────────────────────┐
-│> main.go:5:func main(││package main                                          │
+│> main.go             ││package main                                          │
 │  internal/ui/model.go││                                                      │
 │  internal/ui/model.go││import "fmt"                                          │
 │  internal/ui/finder.g││                                                      │

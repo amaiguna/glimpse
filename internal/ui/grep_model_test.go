@@ -128,8 +128,10 @@ func TestGrepView(t *testing.T) {
 	g.cursor = 1
 
 	view := g.View()
-	assert.Contains(t, view, "main.go:10:func main()")
-	assert.Contains(t, view, "util.go:5:func helper()")
+	assert.Contains(t, view, "main.go")
+	assert.Contains(t, view, "util.go")
+	assert.NotContains(t, view, "func main()")
+	assert.NotContains(t, view, "func helper()")
 }
 
 func TestGrepReset(t *testing.T) {
