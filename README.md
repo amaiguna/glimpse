@@ -1,4 +1,4 @@
-# telescope-tui
+# glimpse
 
 Neovim Telescope にインスパイアされたスタンドアローンの TUI ファジーファインダー。
 エディタに依存せず、ターミナルから単体で動作する。

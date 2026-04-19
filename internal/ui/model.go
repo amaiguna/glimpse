@@ -6,8 +6,8 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/amaiguna/telescope-tui/internal/grep"
-	"github.com/amaiguna/telescope-tui/internal/preview"
+	"github.com/amaiguna/glimpse-tui/internal/grep"
+	"github.com/amaiguna/glimpse-tui/internal/preview"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -76,7 +76,7 @@ type debounceTickMsg struct {
 // PaneTarget は Grep ペインを返す。
 func (debounceTickMsg) PaneTarget() Mode { return ModeGrep }
 
-// Model は telescope-tui の親モデル。
+// Model は glimpse-tui の親モデル。
 // アクティブな Pane にメッセージをルーティングし、レイアウトを管理する。
 type Model struct {
 	mode             Mode

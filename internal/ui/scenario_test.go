@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amaiguna/telescope-tui/internal/grep"
+	"github.com/amaiguna/glimpse-tui/internal/grep"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

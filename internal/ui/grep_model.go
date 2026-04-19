@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/amaiguna/telescope-tui/internal/grep"
+	"github.com/amaiguna/glimpse-tui/internal/grep"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )

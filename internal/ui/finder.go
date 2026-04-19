@@ -3,7 +3,7 @@ package ui
 import (
 	"strings"
 
-	"github.com/amaiguna/telescope-tui/internal/finder"
+	"github.com/amaiguna/glimpse-tui/internal/finder"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-telescope-tui: A standalone TUI fuzzy finder inspired by Neovim's Telescope plugin. Runs independently from any editor in the terminal.
+glimpse: A standalone TUI fuzzy finder inspired by Neovim's Telescope plugin. Runs independently from any editor in the terminal.
 
 ## Tech Stack
 
@@ -19,7 +19,7 @@ telescope-tui: A standalone TUI fuzzy finder inspired by Neovim's Telescope plug
 ## Build & Run
 
 ```bash
-go build -o telescope-tui .
+go build -o glimpse .
 go run .
 ```
 

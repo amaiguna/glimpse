@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/amaiguna/telescope-tui/internal/grep"
+	"github.com/amaiguna/glimpse-tui/internal/grep"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -18,9 +18,9 @@ func FuzzModelUpdateView(f *testing.F) {
 	// シードコーパス: 典型的な操作パターン
 	// kind%8 で種別を決めるので、kind=0:文字, 1:特殊キー, 2:リサイズ, 3:ファイルロード, etc.
 	f.Add([]byte{0, 'h', 0, 'e', 0, 'l', 0, 'l', 0, 'o'})         // 文字入力
-	f.Add([]byte{1, 4, 1, 4})                                       // Tab 往復（keys[4%18]=KeyEnter → keys[4]=KeyTab にマッピング）
-	f.Add([]byte{2, 80, 24, 3, 0, 1, 1, 1, 0})                     // リサイズ→ロード→↓→↓→Enter
-	f.Add([]byte{1, 1, 1, 1, 1, 4})                                 // ↓↓↓→Tab
+	f.Add([]byte{1, 4, 1, 4})                                     // Tab 往復（keys[4%18]=KeyEnter → keys[4]=KeyTab にマッピング）
+	f.Add([]byte{2, 80, 24, 3, 0, 1, 1, 1, 0})                    // リサイズ→ロード→↓→↓→Enter
+	f.Add([]byte{1, 1, 1, 1, 1, 4})                               // ↓↓↓→Tab
 	f.Add([]byte{7, 1, 1, 0, 'x', 6, 50, 20, 0, 'y'})             // 極小リサイズ→文字→マウス→文字
 	f.Add([]byte{3, 5, 1, 1, 1, 1, 1, 1, 1, 1, 1, 4, 4, 0, 0, 0}) // ロード→大量↓→Tab→モード切替連打
 

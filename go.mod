@@ -1,4 +1,4 @@
-module github.com/amaiguna/telescope-tui
+module github.com/amaiguna/glimpse-tui
 
 go 1.26.2
 

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amaiguna/telescope-tui/internal/grep"
+	"github.com/amaiguna/glimpse-tui/internal/grep"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/assert"

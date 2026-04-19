@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/amaiguna/glimpse-tui/internal/ui"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/amaiguna/telescope-tui/internal/ui"
 )
 
 func main() {
