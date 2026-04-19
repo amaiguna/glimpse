@@ -114,6 +114,13 @@ func (g *GrepModel) handleDebounceTick(msg debounceTickMsg) (Pane, tea.Cmd) {
 
 // clampOffset はカーソルが表示範囲内に収まるよう offset を調整する。
 func (g *GrepModel) clampOffset() {
+	// cursor を items 範囲内にクランプ
+	if g.cursor < 0 {
+		g.cursor = 0
+	}
+	if len(g.items) > 0 && g.cursor >= len(g.items) {
+		g.cursor = len(g.items) - 1
+	}
 	h := g.visibleHeight()
 	if h <= 0 {
 		return
@@ -143,6 +150,9 @@ func (g *GrepModel) SetViewSize(h, w int) {
 
 func (g *GrepModel) View() string {
 	h := g.visibleHeight()
+	if g.offset < 0 || g.offset > len(g.items) {
+		g.offset = 0
+	}
 	end := g.offset + h
 	if end > len(g.items) {
 		end = len(g.items)

@@ -109,6 +109,13 @@ func (f *FinderModel) applyFilter() {
 
 // clampOffset はカーソルが表示範囲内に収まるよう offset を調整する。
 func (f *FinderModel) clampOffset() {
+	// cursor を items 範囲内にクランプ
+	if f.cursor < 0 {
+		f.cursor = 0
+	}
+	if len(f.items) > 0 && f.cursor >= len(f.items) {
+		f.cursor = len(f.items) - 1
+	}
 	h := f.visibleHeight()
 	if h <= 0 {
 		return
@@ -147,6 +154,9 @@ func truncateToWidth(s string, w int) string {
 // View はリスト部分のみを描画する（ヘッダーは親 Model が担当）。
 func (f *FinderModel) View() string {
 	h := f.visibleHeight()
+	if f.offset < 0 || f.offset > len(f.items) {
+		f.offset = 0
+	}
 	end := f.offset + h
 	if end > len(f.items) {
 		end = len(f.items)
