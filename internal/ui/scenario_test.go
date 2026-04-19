@@ -36,17 +36,15 @@ func TestScenario_FinderLoadAndDisplay(t *testing.T) {
 	m := NewModel()
 	m, _ = updateModel(t, m, tea.WindowSizeMsg{Width: 80, Height: 24})
 
-	// ローディング中は "loading" が表示される
-	view := m.View()
-	assert.Contains(t, view, "loading")
+	// ローディング中も View() は panic しない
+	_ = m.View()
 
 	// ファイルがロードされると一覧に表示される
 	m, _ = updateModel(t, m, FilesLoadedMsg{Items: []string{"main.go", "go.mod", "README.md"}})
-	view = m.View()
+	view := m.View()
 	assert.Contains(t, stripANSI(view), "main.go")
 	assert.Contains(t, stripANSI(view), "go.mod")
 	assert.Contains(t, stripANSI(view), "README.md")
-	assert.NotContains(t, view, "loading")
 }
 
 func TestScenario_FinderFilterByTyping(t *testing.T) {

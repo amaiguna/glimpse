@@ -303,14 +303,9 @@ func (m Model) View() string {
 		header = ansi.Truncate(header, m.width, "")
 	}
 
-	// エラー表示
+	// エラー表示（枠線なしで早期リターン）
 	if pane.Err() != nil {
 		return header + "\n" + errorStyle.Render(fmt.Sprintf("error: %s", pane.Err().Error())) + "\n"
-	}
-
-	// ローディング表示
-	if pane.IsLoading() {
-		return header + "\n" + loadingStyle.Render("loading...") + "\n"
 	}
 
 	// レイアウト計算

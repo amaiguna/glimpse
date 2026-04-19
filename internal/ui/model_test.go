@@ -482,16 +482,6 @@ func TestViewShowsError(t *testing.T) {
 	assert.Contains(t, view, "something went wrong")
 }
 
-func TestViewShowsLoading(t *testing.T) {
-	m := NewModel()
-	m.finderPane.loading = true
-	m.width = 80
-	m.height = 24
-
-	view := m.View()
-	assert.Contains(t, view, "loading")
-}
-
 func TestViewContainsPreview(t *testing.T) {
 	m := NewModel()
 	m.finderPane.items = []string{"main.go"}
