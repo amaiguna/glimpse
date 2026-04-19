@@ -211,8 +211,20 @@ func (g *GrepModel) DecoratePreview(content string, width int) string {
 	return strings.Join(lines, "\n")
 }
 
-// TextInput は入力欄の View を返す（親 Model がヘッダーに組み込む用）。
+// TextInput は入力欄のモデルを返す。
 func (g *GrepModel) TextInput() textinput.Model { return g.textInput }
+
+// TextInputView はヘッダー用テキスト入力の View 文字列を返す。
+func (g *GrepModel) TextInputView() string { return g.textInput.View() }
+
+// OpenTarget はエディタで開く対象を返す。Grep は "file:line:text" からファイルと行番号を抽出する。
+func (g *GrepModel) OpenTarget() (string, int) {
+	selected := g.SelectedItem()
+	if selected == "" {
+		return "", 0
+	}
+	return parseGrepItem(selected)
+}
 
 // Reset はモード切替時にペインの状態をリセットする。
 func (g *GrepModel) Reset() {

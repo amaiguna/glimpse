@@ -28,6 +28,11 @@ type Pane interface {
 	IsLoading() bool
 	// Err はエラーがあれば返す。
 	Err() error
+	// TextInputView はヘッダー用テキスト入力の View 文字列を返す。
+	TextInputView() string
+	// OpenTarget はエディタで開く対象のファイルパスと行番号を返す。
+	// 選択アイテムがない場合は空文字列と 0 を返す。
+	OpenTarget() (file string, line int)
 	// DecoratePreview はプレビューコンテンツにペイン固有の装飾を施す。
 	// 幅 width は表示可能なカラム数。
 	DecoratePreview(content string, width int) string

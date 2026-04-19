@@ -203,19 +203,11 @@ func (m Model) switchMode() (tea.Model, tea.Cmd) {
 // handleEnter は選択アイテムでエディタを起動する。
 func (m Model) handleEnter() (tea.Model, tea.Cmd) {
 	pane := m.activePane()
-	selected := pane.SelectedItem()
-	if selected == "" {
+	file, line := pane.OpenTarget()
+	if file == "" {
 		return m, nil
 	}
-
-	switch m.mode {
-	case ModeFinder:
-		return m, openEditorCmd(selected, 0)
-	case ModeGrep:
-		file, line := parseGrepItem(selected)
-		return m, openEditorCmd(file, line)
-	}
-	return m, nil
+	return m, openEditorCmd(file, line)
 }
 
 // contentHeight はペイン内部の表示可能行数を計算する。
@@ -301,12 +293,7 @@ func (m Model) View() string {
 	if m.mode == ModeGrep {
 		modeLabel = "Grep"
 	}
-	var inputView string
-	if m.mode == ModeGrep {
-		inputView = m.grepPane.TextInput().View()
-	} else {
-		inputView = m.finderPane.TextInput().View()
-	}
+	inputView := pane.TextInputView()
 	headerText := modeLabelStyle.Render("["+modeLabel+"]") + " " + inputView
 	header := headerStyle.Render(headerText)
 	if m.width > 0 {

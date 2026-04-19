@@ -193,8 +193,17 @@ func (f *FinderModel) DecoratePreview(content string, width int) string {
 	return content
 }
 
-// TextInput は入力欄の View を返す（親 Model がヘッダーに組み込む用）。
+// TextInput は入力欄のモデルを返す。
 func (f *FinderModel) TextInput() textinput.Model { return f.textInput }
+
+// TextInputView はヘッダー用テキスト入力の View 文字列を返す。
+func (f *FinderModel) TextInputView() string { return f.textInput.View() }
+
+// OpenTarget はエディタで開く対象を返す。Finder は行番号なし（0）。
+func (f *FinderModel) OpenTarget() (string, int) {
+	selected := f.SelectedItem()
+	return selected, 0
+}
 
 // Reset はモード切替時にペインの状態をリセットする。
 func (f *FinderModel) Reset() {
