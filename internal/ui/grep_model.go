@@ -230,7 +230,7 @@ func (g *GrepModel) DecoratePreview(content string, width int) string {
 	relIdx := lineNum - g.previewStartLine
 	lines := strings.Split(content, "\n")
 	if relIdx >= 0 && relIdx < len(lines) {
-		lines[relIdx] = highlightLineStyle.Render(lines[relIdx])
+		lines[relIdx] = highlightMatches(lines[relIdx], g.Query())
 	}
 	return strings.Join(lines, "\n")
 }

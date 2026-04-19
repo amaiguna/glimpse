@@ -280,6 +280,7 @@ func TestGrepPreviewRange(t *testing.T) {
 func TestGrepDecoratePreviewTargetsCorrectLine(t *testing.T) {
 	g := NewGrepModel()
 	g.items = []string{"main.go:2:func main()"}
+	g.textInput.SetValue("main")
 
 	// PreviewRange を呼んで previewStartLine をセット
 	g.PreviewRange(20)
@@ -288,8 +289,9 @@ func TestGrepDecoratePreviewTargetsCorrectLine(t *testing.T) {
 	result := g.DecoratePreview(content, 40)
 
 	lines := strings.Split(result, "\n")
-	// stripANSI しても元テキストが残っていること（行が壊れていない）
+	// 非ヒット行は変化なし
 	assert.Equal(t, "package main", stripANSI(lines[0]))
+	// ヒット行のテキストは保持されている
 	assert.Equal(t, "func main() {", stripANSI(lines[1]))
 	assert.Equal(t, "}", stripANSI(lines[2]))
 }
@@ -297,6 +299,7 @@ func TestGrepDecoratePreviewTargetsCorrectLine(t *testing.T) {
 func TestGrepDecoratePreviewWithOffset(t *testing.T) {
 	g := NewGrepModel()
 	g.items = []string{"main.go:50:target line"}
+	g.textInput.SetValue("target")
 
 	// visibleHeight=20 → startLine=40
 	startLine := g.PreviewRange(20)
@@ -321,6 +324,7 @@ func TestGrepDecoratePreviewWithOffset(t *testing.T) {
 func TestGrepDecoratePreviewEmptyContent(t *testing.T) {
 	g := NewGrepModel()
 	g.items = []string{"main.go:1:package main"}
+	g.textInput.SetValue("package")
 	g.PreviewRange(20)
 	assert.Equal(t, "", g.DecoratePreview("", 40))
 }
@@ -329,6 +333,76 @@ func TestGrepDecoratePreviewNoItems(t *testing.T) {
 	g := NewGrepModel()
 	content := "package main\n"
 	assert.Equal(t, content, g.DecoratePreview(content, 40))
+}
+
+func TestHighlightMatches(t *testing.T) {
+	tests := []struct {
+		name     string
+		line     string
+		query    string
+		wantText string // stripANSI 後のテキスト（変わらないこと）
+		changed  bool   // 元の行から変化があるか
+	}{
+		{
+			name:     "単純マッチ",
+			line:     "func main() {",
+			query:    "main",
+			wantText: "func main() {",
+			changed:  true,
+		},
+		{
+			name:     "大文字小文字を区別しない",
+			line:     "Package Main",
+			query:    "package",
+			wantText: "Package Main",
+			changed:  true,
+		},
+		{
+			name:     "マッチなし",
+			line:     "func main() {",
+			query:    "xyz",
+			wantText: "func main() {",
+			changed:  false,
+		},
+		{
+			name:     "複数マッチ",
+			line:     "aa bb aa",
+			query:    "aa",
+			wantText: "aa bb aa",
+			changed:  true,
+		},
+		{
+			name:     "空クエリ",
+			line:     "func main() {",
+			query:    "",
+			wantText: "func main() {",
+			changed:  false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := highlightMatches(tt.line, tt.query)
+			assert.Equal(t, tt.wantText, stripANSI(result), "テキスト内容が保持されること")
+			if tt.changed {
+				assert.NotEqual(t, tt.line, result, "ハイライトが適用されること")
+			} else {
+				assert.Equal(t, tt.line, result, "変更がないこと")
+			}
+		})
+	}
+}
+
+func TestHighlightMatchesPreservesANSI(t *testing.T) {
+	// シンタックスハイライト済み行（chroma 風）
+	line := "\x1b[38;5;81mpackage\x1b[0m \x1b[38;5;166mmain\x1b[0m"
+	result := highlightMatches(line, "main")
+
+	// テキスト内容は保持
+	assert.Equal(t, "package main", stripANSI(result))
+	// 元の前景色シーケンスが残っている
+	assert.Contains(t, result, "\x1b[38;5;166m", "chroma の前景色が保持されること")
+	// ハイライト開始シーケンスが含まれている
+	assert.Contains(t, result, matchHlStart, "マッチハイライトが適用されること")
 }
 
 func TestFinderDecoratePreviewPassthrough(t *testing.T) {
