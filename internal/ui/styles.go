@@ -10,11 +10,6 @@ var (
 	colorWhite     = lipgloss.Color("255")
 )
 
-// アプリ全体の枠
-var appStyle = lipgloss.NewStyle().
-	Border(lipgloss.RoundedBorder()).
-	BorderForeground(colorPrimary)
-
 // ヘッダー（モードラベル + 入力欄）
 var headerStyle = lipgloss.NewStyle().
 	Bold(true).
@@ -26,8 +21,15 @@ var modeLabelStyle = lipgloss.NewStyle().
 	Bold(true).
 	Foreground(colorPrimary)
 
-// リストペイン
-var listPaneStyle = lipgloss.NewStyle()
+// リストペイン枠
+var listPaneStyle = lipgloss.NewStyle().
+	Border(lipgloss.NormalBorder()).
+	BorderForeground(colorPrimary)
+
+// プレビューペイン枠
+var previewPaneStyle = lipgloss.NewStyle().
+	Border(lipgloss.NormalBorder()).
+	BorderForeground(colorSecondary)
 
 // リストアイテム（選択中）
 var selectedItemStyle = lipgloss.NewStyle().
@@ -37,13 +39,6 @@ var selectedItemStyle = lipgloss.NewStyle().
 // リストアイテム（非選択）
 var normalItemStyle = lipgloss.NewStyle().
 	Foreground(colorWhite)
-
-// セパレータ
-var separatorStyle = lipgloss.NewStyle().
-	Foreground(colorSecondary)
-
-// プレビューペイン
-var previewPaneStyle = lipgloss.NewStyle()
 
 // エラー表示
 var errorStyle = lipgloss.NewStyle().

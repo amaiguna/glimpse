@@ -11,12 +11,14 @@ import (
 // FinderModel はファイルファインダーモードのペイン。
 // fd/rg --files で取得したファイル一覧をファジーフィルタリングする。
 type FinderModel struct {
-	textInput textinput.Model
-	items     []string // フィルタ後の表示アイテム
-	allFiles  []string // フィルタ前の全ファイルリスト
-	cursor    int
-	loading   bool
-	err       error
+	textInput  textinput.Model
+	items      []string // フィルタ後の表示アイテム
+	allFiles   []string // フィルタ前の全ファイルリスト
+	cursor     int
+	offset     int // スクロールオフセット（表示先頭行）
+	viewHeight int // 表示可能行数（親から設定）
+	loading    bool
+	err        error
 }
 
 // NewFinderModel は FinderModel を初期化して返す。
@@ -63,11 +65,13 @@ func (f *FinderModel) handleKey(msg tea.KeyMsg) (Pane, tea.Cmd) {
 	case tea.KeyUp:
 		if f.cursor > 0 {
 			f.cursor--
+			f.clampOffset()
 		}
 		return f, nil
 	case tea.KeyDown:
 		if len(f.items) > 0 && f.cursor < len(f.items)-1 {
 			f.cursor++
+			f.clampOffset()
 		}
 		return f, nil
 	default:
@@ -101,14 +105,50 @@ func (f *FinderModel) applyFilter() {
 	}
 }
 
+// clampOffset はカーソルが表示範囲内に収まるよう offset を調整する。
+func (f *FinderModel) clampOffset() {
+	h := f.visibleHeight()
+	if h <= 0 {
+		return
+	}
+	if f.cursor < f.offset {
+		f.offset = f.cursor
+	}
+	if f.cursor >= f.offset+h {
+		f.offset = f.cursor - h + 1
+	}
+}
+
+// visibleHeight は表示可能行数を返す。
+func (f *FinderModel) visibleHeight() int {
+	if f.viewHeight > 0 {
+		return f.viewHeight
+	}
+	return len(f.items)
+}
+
+// SetViewHeight は親から表示可能行数を設定する。
+func (f *FinderModel) SetViewHeight(h int) {
+	f.viewHeight = h
+	f.clampOffset()
+}
+
 // View はリスト部分のみを描画する（ヘッダーは親 Model が担当）。
 func (f *FinderModel) View() string {
+	h := f.visibleHeight()
+	end := f.offset + h
+	if end > len(f.items) {
+		end = len(f.items)
+	}
+	visible := f.items[f.offset:end]
+
 	var b strings.Builder
-	for i, item := range f.items {
+	for i, item := range visible {
 		if i > 0 {
 			b.WriteString("\n")
 		}
-		if i == f.cursor {
+		absIdx := f.offset + i
+		if absIdx == f.cursor {
 			b.WriteString(selectedItemStyle.Render("> " + item))
 		} else {
 			b.WriteString(normalItemStyle.Render("  " + item))

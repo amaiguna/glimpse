@@ -20,6 +20,8 @@ type GrepModel struct {
 	textInput   textinput.Model
 	items       []string // "file:line:text" 形式
 	cursor      int
+	offset      int // スクロールオフセット（表示先頭行）
+	viewHeight  int // 表示可能行数（親から設定）
 	loading     bool
 	err         error
 	debounceTag int
@@ -70,11 +72,13 @@ func (g *GrepModel) handleKey(msg tea.KeyMsg) (Pane, tea.Cmd) {
 	case tea.KeyUp:
 		if g.cursor > 0 {
 			g.cursor--
+			g.clampOffset()
 		}
 		return g, nil
 	case tea.KeyDown:
 		if len(g.items) > 0 && g.cursor < len(g.items)-1 {
 			g.cursor++
+			g.clampOffset()
 		}
 		return g, nil
 	default:
@@ -106,13 +110,49 @@ func (g *GrepModel) handleDebounceTick(msg debounceTickMsg) (Pane, tea.Cmd) {
 	return g, runGrepCmd(g.textInput.Value())
 }
 
+// clampOffset はカーソルが表示範囲内に収まるよう offset を調整する。
+func (g *GrepModel) clampOffset() {
+	h := g.visibleHeight()
+	if h <= 0 {
+		return
+	}
+	if g.cursor < g.offset {
+		g.offset = g.cursor
+	}
+	if g.cursor >= g.offset+h {
+		g.offset = g.cursor - h + 1
+	}
+}
+
+// visibleHeight は表示可能行数を返す。
+func (g *GrepModel) visibleHeight() int {
+	if g.viewHeight > 0 {
+		return g.viewHeight
+	}
+	return len(g.items)
+}
+
+// SetViewHeight は親から表示可能行数を設定する。
+func (g *GrepModel) SetViewHeight(h int) {
+	g.viewHeight = h
+	g.clampOffset()
+}
+
 func (g *GrepModel) View() string {
+	h := g.visibleHeight()
+	end := g.offset + h
+	if end > len(g.items) {
+		end = len(g.items)
+	}
+	visible := g.items[g.offset:end]
+
 	var b strings.Builder
-	for i, item := range g.items {
+	for i, item := range visible {
 		if i > 0 {
 			b.WriteString("\n")
 		}
-		if i == g.cursor {
+		absIdx := g.offset + i
+		if absIdx == g.cursor {
 			b.WriteString(selectedItemStyle.Render("> " + item))
 		} else {
 			b.WriteString(normalItemStyle.Render("  " + item))

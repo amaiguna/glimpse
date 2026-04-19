@@ -107,6 +107,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.updatePaneHeights()
 		return m, nil
 	case EditorFinishedMsg:
 		return m, nil
@@ -161,6 +162,23 @@ func (m Model) handleEnter() (tea.Model, tea.Cmd) {
 		return m, openEditorCmd(file, line)
 	}
 	return m, nil
+}
+
+// contentHeight はペイン内部の表示可能行数を計算する。
+func (m *Model) contentHeight() int {
+	// ヘッダー1行 + 枠線上下2行分を引く
+	h := m.height - 2 - 2
+	if h < 1 {
+		h = 10
+	}
+	return h
+}
+
+// updatePaneHeights は両ペインの表示可能行数を更新する。
+func (m *Model) updatePaneHeights() {
+	h := m.contentHeight()
+	m.finderPane.SetViewHeight(h)
+	m.grepPane.SetViewHeight(h)
 }
 
 // updatePreview は現在のアクティブペインのファイルパスに基づいてプレビューを更新する。
@@ -230,52 +248,41 @@ func (m Model) View() string {
 	}
 
 	// レイアウト計算
-	separatorWidth := 3
-	listWidth := m.width/2 - separatorWidth/2
-	if listWidth < 20 {
-		listWidth = 20
+	// NormalBorder は上下左右各1文字分を消費する（左右で+2、上下で+2）
+	borderH := 2
+	borderW := 2
+	contentHeight := m.contentHeight()
+	listWidth := (m.width*3)/10 - borderW
+	if listWidth < 10 {
+		listWidth = 10
 	}
-	previewWidth := m.width - listWidth - separatorWidth
+	previewWidth := m.width - listWidth - borderW*2
 	if previewWidth < 0 {
 		previewWidth = 0
 	}
-	contentHeight := m.height - 2
-	if contentHeight < 1 {
-		contentHeight = 10
-	}
 
-	// 各ペインを lipgloss でスタイル化
-	listStyle := lipgloss.NewStyle().
+	// 各ペインを枠線付きでレンダリング
+	leftPane := listPaneStyle.
 		Width(listWidth).
-		MaxWidth(listWidth).
+		MaxWidth(listWidth + borderW).
 		Height(contentHeight).
-		MaxHeight(contentHeight)
+		MaxHeight(contentHeight + borderH).
+		Render(pane.View())
 
-	separatorStyle := lipgloss.NewStyle().
-		Width(separatorWidth).
-		MaxWidth(separatorWidth).
-		Height(contentHeight).
-		MaxHeight(contentHeight)
-
-	previewStyle := lipgloss.NewStyle().
-		Width(previewWidth).
-		MaxWidth(previewWidth).
-		Height(contentHeight).
-		MaxHeight(contentHeight)
-
-	// セパレータ
-	var sepLines []string
-	for i := 0; i < contentHeight; i++ {
-		sepLines = append(sepLines, " | ")
+	// プレビューコンテンツを表示行数に切り詰め
+	previewText := m.previewContent
+	if lines := strings.Split(previewText, "\n"); len(lines) > contentHeight {
+		previewText = strings.Join(lines[:contentHeight], "\n")
 	}
-	separatorContent := strings.Join(sepLines, "\n")
 
-	// レンダリングと結合
-	leftPane := listStyle.Render(pane.View())
-	sep := separatorStyle.Render(separatorContent)
-	rightPane := previewStyle.Render(m.previewContent)
+	rightPane := previewPaneStyle.
+		Width(previewWidth).
+		MaxWidth(previewWidth + borderW).
+		Height(contentHeight).
+		MaxHeight(contentHeight + borderH).
+		Render(previewText)
 
-	body := lipgloss.JoinHorizontal(lipgloss.Top, leftPane, sep, rightPane)
+	body := lipgloss.JoinHorizontal(lipgloss.Top, leftPane, rightPane)
 
 	return header + "\n" + body
 }
