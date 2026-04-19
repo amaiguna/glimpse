@@ -57,6 +57,12 @@ type GrepErrorMsg struct {
 // PaneTarget は Grep ペインを返す。
 func (GrepErrorMsg) PaneTarget() Mode { return ModeGrep }
 
+// PreviewLoadedMsg はプレビューの非同期読み込みが完了したことを通知する。
+type PreviewLoadedMsg struct {
+	Content string
+	Path    string // 古いプレビューが上書きされないようパスを照合
+}
+
 // EditorFinishedMsg はエディタプロセスが終了したことを通知する。
 type EditorFinishedMsg struct {
 	Err error
@@ -82,6 +88,7 @@ type Model struct {
 	width          int
 	height         int
 	previewContent string
+	previewPath    string // 現在プレビュー中のファイルパス（照合用）
 }
 
 // NewModel は Model を初期化して返す。
@@ -125,6 +132,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.updatePaneSizes()
 		return m, nil
+	case PreviewLoadedMsg:
+		// 古いプレビューが後から届いた場合は無視
+		if msg.Path == m.previewPath {
+			m.previewContent = msg.Content
+		}
+		return m, nil
 	case EditorFinishedMsg:
 		return m, nil
 
@@ -146,16 +159,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) delegateToFinder(msg tea.Msg) (tea.Model, tea.Cmd) {
 	pane, cmd := m.finderPane.Update(msg)
 	m.finderPane = pane.(*FinderModel)
-	m.updatePreview()
-	return m, cmd
+	return m, tea.Batch(cmd, m.previewCmd())
 }
 
 // delegateToGrep は GrepPane にメッセージを委譲する。
 func (m Model) delegateToGrep(msg tea.Msg) (tea.Model, tea.Cmd) {
 	pane, cmd := m.grepPane.Update(msg)
 	m.grepPane = pane.(*GrepModel)
-	m.updatePreview()
-	return m, cmd
+	return m, tea.Batch(cmd, m.previewCmd())
 }
 
 // delegateToPane はアクティブなペインにメッセージを委譲し、プレビューを更新する。
@@ -170,8 +181,7 @@ func (m Model) delegateToPane(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.finderPane = pane.(*FinderModel)
 		cmd = c
 	}
-	m.updatePreview()
-	return m, cmd
+	return m, tea.Batch(cmd, m.previewCmd())
 }
 
 // switchMode は Finder ↔ Grep のモード切替を行う。
@@ -181,15 +191,13 @@ func (m Model) switchMode() (tea.Model, tea.Cmd) {
 		m.finderPane.Blur()
 		m.grepPane.Reset()
 		cmd := m.grepPane.Focus()
-		m.updatePreview()
-		return m, cmd
+		return m, tea.Batch(cmd, m.previewCmd())
 	}
 	m.mode = ModeFinder
 	m.grepPane.Blur()
 	m.finderPane.Reset()
 	cmd := m.finderPane.Focus()
-	m.updatePreview()
-	return m, cmd
+	return m, tea.Batch(cmd, m.previewCmd())
 }
 
 // handleEnter は選択アイテムでエディタを起動する。
@@ -238,26 +246,33 @@ func (m *Model) updatePaneSizes() {
 	m.grepPane.SetViewSize(h, w)
 }
 
-// updatePreview は現在のアクティブペインのファイルパスに基づいてプレビューを更新する。
-func (m *Model) updatePreview() {
+// previewCmd は現在のアクティブペインのファイルパスに基づいてプレビュー読み込みの Cmd を返す。
+// ファイルパスが変わっていない場合は Cmd を発行しない。
+func (m *Model) previewCmd() tea.Cmd {
 	filePath := m.activePane().FilePath()
 	if filePath == "" {
 		m.previewContent = ""
-		return
+		m.previewPath = ""
+		return nil
 	}
-
-	content, err := preview.ReadFile(filePath, previewMaxLines)
-	if err != nil {
-		m.previewContent = fmt.Sprintf("error: %s", err.Error())
-		return
+	if filePath == m.previewPath {
+		return nil
 	}
-
-	highlighted, err := preview.Highlight(filePath, content)
-	if err != nil {
-		m.previewContent = content
-		return
+	m.previewPath = filePath
+	return func() tea.Msg {
+		content, err := preview.ReadFile(filePath, previewMaxLines)
+		if err != nil {
+			return PreviewLoadedMsg{
+				Content: fmt.Sprintf("error: %s", err.Error()),
+				Path:    filePath,
+			}
+		}
+		highlighted, err := preview.Highlight(filePath, content)
+		if err != nil {
+			highlighted = content
+		}
+		return PreviewLoadedMsg{Content: highlighted, Path: filePath}
 	}
-	m.previewContent = highlighted
 }
 
 // openEditorCmd は $EDITOR でファイルを開くコマンドを返す。

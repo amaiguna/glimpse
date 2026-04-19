@@ -191,6 +191,28 @@ func TestCursorMoveDelegatesToActivePane(t *testing.T) {
 
 // --- 親 Model: プレビュー統合テスト ---
 
+// drainBatchCmds は tea.Batch が返す Cmd を全て実行し、
+// PreviewLoadedMsg があれば Model に適用するヘルパー。
+func drainCmds(t *testing.T, m Model, cmd tea.Cmd) Model {
+	t.Helper()
+	if cmd == nil {
+		return m
+	}
+	msg := cmd()
+	// tea.Batch は BatchMsg ([]Cmd) を返す
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		for _, c := range batch {
+			m = drainCmds(t, m, c)
+		}
+		return m
+	}
+	if _, ok := msg.(PreviewLoadedMsg); ok {
+		result, _ := m.Update(msg)
+		return result.(Model)
+	}
+	return m
+}
+
 func TestPreviewUpdatesOnCursorMove(t *testing.T) {
 	dir := t.TempDir()
 	fileA := filepath.Join(dir, "a.go")
@@ -203,16 +225,17 @@ func TestPreviewUpdatesOnCursorMove(t *testing.T) {
 	m.finderPane.allFiles = []string{fileA, fileB}
 	m.finderPane.loading = false
 
-	model, _ := m.Update(specialKeyMsg(tea.KeyDown))
-	got := model.(Model)
+	model, cmd := m.Update(specialKeyMsg(tea.KeyDown))
+	got := drainCmds(t, model.(Model), cmd)
 	assert.Contains(t, stripANSI(got.previewContent), "package b")
 }
 
 func TestPreviewClearsWhenNoItems(t *testing.T) {
 	m := NewModel()
 	m.previewContent = "stale"
-	m.updatePreview()
-	assert.Equal(t, "", m.previewContent)
+	cmd := m.previewCmd()
+	got := drainCmds(t, m, cmd)
+	assert.Equal(t, "", got.previewContent)
 }
 
 func TestPreviewInGrepMode(t *testing.T) {
@@ -223,9 +246,10 @@ func TestPreviewInGrepMode(t *testing.T) {
 	m := NewModel()
 	m.mode = ModeGrep
 	m.grepPane.items = []string{file + ":1:package main"}
-	m.updatePreview()
+	cmd := m.previewCmd()
+	got := drainCmds(t, m, cmd)
 
-	assert.Contains(t, stripANSI(m.previewContent), "package main")
+	assert.Contains(t, stripANSI(got.previewContent), "package main")
 }
 
 func TestGrepDecoratePreviewTargetsCorrectLine(t *testing.T) {
