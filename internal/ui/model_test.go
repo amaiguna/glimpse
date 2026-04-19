@@ -63,6 +63,26 @@ func TestModeSwitchWithTab(t *testing.T) {
 	assert.Equal(t, []string{"a", "b"}, got.finderPane.items)
 }
 
+func TestModeSwitchAfterScrollDoesNotPanic(t *testing.T) {
+	m := NewModel()
+	m2, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m3, _ := m2.Update(FilesLoadedMsg{Items: []string{"a", "b", "c", "d", "e"}})
+
+	// カーソルを下に移動
+	cur := m3
+	for i := 0; i < 4; i++ {
+		cur, _ = cur.Update(specialKeyMsg(tea.KeyDown))
+	}
+
+	// Tab で Grep に切り替え — panic しないこと
+	assert.NotPanics(t, func() {
+		model, _ := cur.Update(specialKeyMsg(tea.KeyTab))
+		got := model.(Model)
+		// View() も panic しないこと
+		_ = got.View()
+	})
+}
+
 // --- 親 Model: グローバルキーテスト ---
 
 func TestQuitKeys(t *testing.T) {

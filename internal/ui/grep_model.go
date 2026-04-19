@@ -195,6 +195,7 @@ func (g *GrepModel) TextInput() textinput.Model { return g.textInput }
 func (g *GrepModel) Reset() {
 	g.textInput.SetValue("")
 	g.cursor = 0
+	g.offset = 0
 	g.items = nil
 	g.err = nil
 }

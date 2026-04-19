@@ -195,6 +195,7 @@ func (f *FinderModel) TextInput() textinput.Model { return f.textInput }
 func (f *FinderModel) Reset() {
 	f.textInput.SetValue("")
 	f.cursor = 0
+	f.offset = 0
 	f.err = nil
 	f.items = f.allFiles
 }
