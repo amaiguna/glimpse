@@ -12,6 +12,31 @@ import (
 	"github.com/alecthomas/chroma/v2/styles"
 )
 
+// binarySniffSize はバイナリ判定のために先頭から読み込むバイト数。
+const binarySniffSize = 8192
+
+// BinaryFileMessage はバイナリファイルが選択された際にプレビュー欄に表示する文字列。
+const BinaryFileMessage = "バイナリファイルはプレビューできません"
+
+// IsBinary はファイルがバイナリかどうかを判定する。
+// 先頭 binarySniffSize バイトに NUL バイト (0x00) が含まれていれば true を返す
+// （Git と同じ方式）。
+func IsBinary(path string) (bool, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+
+	buf := make([]byte, binarySniffSize)
+	n, err := f.Read(buf)
+	if err != nil && n == 0 {
+		// EOF（空ファイル）はバイナリではない
+		return false, nil
+	}
+	return bytes.IndexByte(buf[:n], 0x00) >= 0, nil
+}
+
 // ReadFile はファイルを読み込み、最大 maxLines 行まで返す。
 // maxLines が 0 以下の場合は全行を返す。
 func ReadFile(path string, maxLines int) (string, error) {

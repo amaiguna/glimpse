@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/amaiguna/glimpse-tui/internal/grep"
+	"github.com/amaiguna/glimpse-tui/internal/preview"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/assert"
@@ -237,6 +238,36 @@ func TestPreviewClearsWhenNoItems(t *testing.T) {
 	cmd := m.previewCmd()
 	got := drainCmds(t, m, cmd)
 	assert.Equal(t, "", got.previewContent)
+}
+
+func TestPreviewBinaryFileInFinderMode(t *testing.T) {
+	dir := t.TempDir()
+	binFile := filepath.Join(dir, "app.bin")
+	require.NoError(t, os.WriteFile(binFile, []byte{0x7f, 'E', 'L', 'F', 0x00, 'x'}, 0644))
+
+	m := NewModel()
+	m.finderPane.items = []string{binFile}
+	m.finderPane.allFiles = []string{binFile}
+	m.finderPane.loading = false
+
+	cmd := m.previewCmd()
+	got := drainCmds(t, m, cmd)
+
+	assert.Equal(t, preview.BinaryFileMessage, got.previewContent)
+}
+
+func TestPreviewBinaryFileInGrepMode(t *testing.T) {
+	dir := t.TempDir()
+	binFile := filepath.Join(dir, "app.bin")
+	require.NoError(t, os.WriteFile(binFile, []byte{0x00, 0x01, 0x02}, 0644))
+
+	m := NewModel()
+	m.mode = ModeGrep
+	m.grepPane.items = []string{binFile + ":1:match"}
+	cmd := m.previewCmd()
+	got := drainCmds(t, m, cmd)
+
+	assert.Equal(t, preview.BinaryFileMessage, got.previewContent)
 }
 
 func TestPreviewInGrepMode(t *testing.T) {

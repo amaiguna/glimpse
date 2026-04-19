@@ -133,3 +133,51 @@ func TestHighlightEmptyContent(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "", got)
 }
+
+func TestIsBinary(t *testing.T) {
+	tests := []struct {
+		name    string
+		content []byte
+		want    bool
+	}{
+		{
+			name:    "\u901a\u5e38\u306e\u30c6\u30ad\u30b9\u30c8",
+			content: []byte("package main\n\nfunc main() {}\n"),
+			want:    false,
+		},
+		{
+			name:    "\u7a7a\u30d5\u30a1\u30a4\u30eb",
+			content: []byte{},
+			want:    false,
+		},
+		{
+			name:    "NUL \u30d0\u30a4\u30c8\u3092\u542b\u3080",
+			content: []byte{0x7f, 'E', 'L', 'F', 0x02, 0x01, 0x01, 0x00, 'a', 'b'},
+			want:    true,
+		},
+		{
+			name:    "\u5148\u982d\u306b NUL",
+			content: []byte{0x00, 'a', 'b', 'c'},
+			want:    true,
+		},
+		{
+			name:    "UTF-8 \u306e\u65e5\u672c\u8a9e",
+			content: []byte("\u3053\u3093\u306b\u3061\u306f\u4e16\u754c\n"),
+			want:    false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "f.bin")
+			require.NoError(t, os.WriteFile(path, tt.content, 0644))
+			got, err := IsBinary(path)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestIsBinaryNotFound(t *testing.T) {
+	_, err := IsBinary("/nonexistent/file.bin")
+	assert.Error(t, err)
+}

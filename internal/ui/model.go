@@ -255,6 +255,9 @@ func (m *Model) previewCmd() tea.Cmd {
 	m.previewPath = filePath
 	m.previewStartLine = startLine
 	return func() tea.Msg {
+		if binary, err := preview.IsBinary(filePath); err == nil && binary {
+			return PreviewLoadedMsg{Content: preview.BinaryFileMessage, Path: filePath}
+		}
 		content, err := preview.ReadFileRange(filePath, startLine, visibleHeight)
 		if err != nil {
 			return PreviewLoadedMsg{
