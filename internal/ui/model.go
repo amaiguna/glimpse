@@ -10,6 +10,7 @@ import (
 	"github.com/amaiguna/telescope-tui/internal/preview"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // Mode はファインダーの動作モードを表す。
@@ -107,7 +108,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.updatePaneHeights()
+		m.updatePaneSizes()
 		return m, nil
 	case EditorFinishedMsg:
 		return m, nil
@@ -174,11 +175,22 @@ func (m *Model) contentHeight() int {
 	return h
 }
 
-// updatePaneHeights は両ペインの表示可能行数を更新する。
-func (m *Model) updatePaneHeights() {
+// listWidth はリストペインの内部幅を計算する。
+func (m *Model) listWidth() int {
+	borderW := 2
+	w := (m.width*3)/10 - borderW
+	if w < 10 {
+		w = 10
+	}
+	return w
+}
+
+// updatePaneSizes は両ペインの表示可能サイズを更新する。
+func (m *Model) updatePaneSizes() {
 	h := m.contentHeight()
-	m.finderPane.SetViewHeight(h)
-	m.grepPane.SetViewHeight(h)
+	w := m.listWidth()
+	m.finderPane.SetViewSize(h, w)
+	m.grepPane.SetViewSize(h, w)
 }
 
 // updatePreview は現在のアクティブペインのファイルパスに基づいてプレビューを更新する。
@@ -252,10 +264,7 @@ func (m Model) View() string {
 	borderH := 2
 	borderW := 2
 	contentHeight := m.contentHeight()
-	listWidth := (m.width*3)/10 - borderW
-	if listWidth < 10 {
-		listWidth = 10
-	}
+	listWidth := m.listWidth()
 	previewWidth := m.width - listWidth - borderW*2
 	if previewWidth < 0 {
 		previewWidth = 0
@@ -269,10 +278,17 @@ func (m Model) View() string {
 		MaxHeight(contentHeight + borderH).
 		Render(pane.View())
 
-	// プレビューコンテンツを表示行数に切り詰め
+	// プレビューコンテンツを表示サイズに切り詰め
 	previewText := m.previewContent
-	if lines := strings.Split(previewText, "\n"); len(lines) > contentHeight {
-		previewText = strings.Join(lines[:contentHeight], "\n")
+	if previewText != "" {
+		lines := strings.Split(previewText, "\n")
+		if len(lines) > contentHeight {
+			lines = lines[:contentHeight]
+		}
+		for i, line := range lines {
+			lines[i] = ansi.Truncate(line, previewWidth, "")
+		}
+		previewText = strings.Join(lines, "\n")
 	}
 
 	rightPane := previewPaneStyle.

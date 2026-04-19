@@ -22,6 +22,7 @@ type GrepModel struct {
 	cursor      int
 	offset      int // スクロールオフセット（表示先頭行）
 	viewHeight  int // 表示可能行数（親から設定）
+	viewWidth   int // 表示可能幅（親から設定）
 	loading     bool
 	err         error
 	debounceTag int
@@ -132,9 +133,10 @@ func (g *GrepModel) visibleHeight() int {
 	return len(g.items)
 }
 
-// SetViewHeight は親から表示可能行数を設定する。
-func (g *GrepModel) SetViewHeight(h int) {
+// SetViewSize は親から表示可能な行数と幅を設定する。
+func (g *GrepModel) SetViewSize(h, w int) {
 	g.viewHeight = h
+	g.viewWidth = w
 	g.clampOffset()
 }
 
@@ -146,16 +148,20 @@ func (g *GrepModel) View() string {
 	}
 	visible := g.items[g.offset:end]
 
+	// カーソル記号 "> " の分を引いた残り幅
+	itemWidth := g.viewWidth - 2
+
 	var b strings.Builder
 	for i, item := range visible {
 		if i > 0 {
 			b.WriteString("\n")
 		}
 		absIdx := g.offset + i
+		display := truncateToWidth(item, itemWidth)
 		if absIdx == g.cursor {
-			b.WriteString(selectedItemStyle.Render("> " + item))
+			b.WriteString(selectedItemStyle.Render("> " + display))
 		} else {
-			b.WriteString(normalItemStyle.Render("  " + item))
+			b.WriteString(normalItemStyle.Render("  " + display))
 		}
 	}
 	return b.String()

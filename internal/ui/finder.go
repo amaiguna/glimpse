@@ -6,6 +6,7 @@ import (
 	"github.com/amaiguna/telescope-tui/internal/finder"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // FinderModel はファイルファインダーモードのペイン。
@@ -17,6 +18,7 @@ type FinderModel struct {
 	cursor     int
 	offset     int // スクロールオフセット（表示先頭行）
 	viewHeight int // 表示可能行数（親から設定）
+	viewWidth  int // 表示可能幅（親から設定）
 	loading    bool
 	err        error
 }
@@ -127,10 +129,19 @@ func (f *FinderModel) visibleHeight() int {
 	return len(f.items)
 }
 
-// SetViewHeight は親から表示可能行数を設定する。
-func (f *FinderModel) SetViewHeight(h int) {
+// SetViewSize は親から表示可能な行数と幅を設定する。
+func (f *FinderModel) SetViewSize(h, w int) {
 	f.viewHeight = h
+	f.viewWidth = w
 	f.clampOffset()
+}
+
+// truncateToWidth は文字列を表示幅 w に切り詰める。
+func truncateToWidth(s string, w int) string {
+	if w <= 0 {
+		return s
+	}
+	return ansi.Truncate(s, w, "")
 }
 
 // View はリスト部分のみを描画する（ヘッダーは親 Model が担当）。
@@ -142,16 +153,20 @@ func (f *FinderModel) View() string {
 	}
 	visible := f.items[f.offset:end]
 
+	// カーソル記号 "> " の分を引いた残り幅
+	itemWidth := f.viewWidth - 2
+
 	var b strings.Builder
 	for i, item := range visible {
 		if i > 0 {
 			b.WriteString("\n")
 		}
 		absIdx := f.offset + i
+		display := truncateToWidth(item, itemWidth)
 		if absIdx == f.cursor {
-			b.WriteString(selectedItemStyle.Render("> " + item))
+			b.WriteString(selectedItemStyle.Render("> " + display))
 		} else {
-			b.WriteString(normalItemStyle.Render("  " + item))
+			b.WriteString(normalItemStyle.Render("  " + display))
 		}
 	}
 	return b.String()
