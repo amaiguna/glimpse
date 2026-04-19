@@ -70,13 +70,13 @@ func (g *GrepModel) Update(msg tea.Msg) (Pane, tea.Cmd) {
 
 func (g *GrepModel) handleKey(msg tea.KeyMsg) (Pane, tea.Cmd) {
 	switch msg.Type {
-	case tea.KeyUp:
+	case tea.KeyUp, tea.KeyCtrlP:
 		if g.cursor > 0 {
 			g.cursor--
 			g.clampOffset()
 		}
 		return g, nil
-	case tea.KeyDown:
+	case tea.KeyDown, tea.KeyCtrlN:
 		if len(g.items) > 0 && g.cursor < len(g.items)-1 {
 			g.cursor++
 			g.clampOffset()

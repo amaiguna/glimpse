@@ -64,13 +64,13 @@ func (f *FinderModel) Update(msg tea.Msg) (Pane, tea.Cmd) {
 
 func (f *FinderModel) handleKey(msg tea.KeyMsg) (Pane, tea.Cmd) {
 	switch msg.Type {
-	case tea.KeyUp:
+	case tea.KeyUp, tea.KeyCtrlP:
 		if f.cursor > 0 {
 			f.cursor--
 			f.clampOffset()
 		}
 		return f, nil
-	case tea.KeyDown:
+	case tea.KeyDown, tea.KeyCtrlN:
 		if len(f.items) > 0 && f.cursor < len(f.items)-1 {
 			f.cursor++
 			f.clampOffset()
