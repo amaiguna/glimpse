@@ -1,0 +1,23 @@
+ [Grep] > func 
+┌──────────────────────┐┌──────────────────────────────────────────────────────┐
+│> main.go:5:func main(││package main                                          │
+│  internal/ui/model.go││                                                      │
+│  internal/ui/model.go││import "fmt"                                          │
+│  internal/ui/finder.g││                                                      │
+│  internal/ui/finder.g││func main() {                                         │
+│                      ││    fmt.Println("hello")                              │
+│                      ││}                                                     │
+│                      ││                                                      │
+│                      ││                                                      │
+│                      ││                                                      │
+│                      ││                                                      │
+│                      ││                                                      │
+│                      ││                                                      │
+│                      ││                                                      │
+│                      ││                                                      │
+│                      ││                                                      │
+│                      ││                                                      │
+│                      ││                                                      │
+│                      ││                                                      │
+│                      ││                                                      │
+└──────────────────────┘└──────────────────────────────────────────────────────┘

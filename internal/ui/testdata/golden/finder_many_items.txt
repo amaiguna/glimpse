@@ -1,0 +1,23 @@
+ [Files] > Search files...
+┌──────────────────────┐┌──────────────────────────────────────────────────────┐
+│> pkg/service/handler_││package service                                       │
+│  pkg/service/handler_││                                                      │
+│  pkg/service/handler_││func Handle() error {                                 │
+│  pkg/service/handler_││    return nil                                        │
+│  pkg/service/handler_││}                                                     │
+│  pkg/service/handler_││                                                      │
+│  pkg/service/handler_││                                                      │
+│  pkg/service/handler_││                                                      │
+│  pkg/service/handler_││                                                      │
+│  pkg/service/handler_││                                                      │
+│  pkg/service/handler_││                                                      │
+│  pkg/service/handler_││                                                      │
+│  pkg/service/handler_││                                                      │
+│  pkg/service/handler_││                                                      │
+│  pkg/service/handler_││                                                      │
+│  pkg/service/handler_││                                                      │
+│  pkg/service/handler_││                                                      │
+│  pkg/service/handler_││                                                      │
+│  pkg/service/handler_││                                                      │
+│  pkg/service/handler_││                                                      │
+└──────────────────────┘└──────────────────────────────────────────────────────┘
