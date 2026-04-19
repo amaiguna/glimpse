@@ -32,66 +32,114 @@ main.go
 └──────────────────────────────────────────────┘
 ```
 
+## UI 層の設計
+
+### Pane インターフェース
+
+親 Model は `Pane` インターフェースを通じて Finder / Grep を統一的に扱う。
+モード固有のロジック（プレビュー範囲、エディタ起動パラメータ、入力 View 等）は全て各ペインに閉じ込められ、親はインターフェース経由でのみアクセスする。
+
+```go
+type Pane interface {
+    Update(msg tea.Msg) (Pane, tea.Cmd)
+    View() string
+    SelectedItem() string
+    FilePath() string
+    Query() string
+    IsLoading() bool
+    Err() error
+    TextInputView() string
+    OpenTarget() (file string, line int)
+    PreviewRange(visibleHeight int) int
+    DecoratePreview(content string, width int) string
+}
+```
+
+現在 11 メソッド。実装は `FinderModel` と `GrepModel` の2つ。
+
+### Msg ルーティング
+
+```
+tea.Msg
+  │
+  ├─ tea.KeyMsg (グローバル)
+  │    ├─ Ctrl+C / Esc  → tea.Quit
+  │    ├─ Tab            → switchMode()
+  │    ├─ Enter          → pane.OpenTarget() → openEditorCmd()
+  │    └─ その他          → delegateToPane() (アクティブペイン)
+  │
+  ├─ paneMsg (ペイン固有) ← PaneTarget() で宛先を自動判別
+  │    ├─ FilesLoadedMsg, FilesErrorMsg  → delegateToFinder()
+  │    └─ GrepDoneMsg, GrepErrorMsg, debounceTickMsg → delegateToGrep()
+  │
+  ├─ PreviewLoadedMsg → previewContent にセット（パス照合）
+  ├─ tea.WindowSizeMsg → リサイズ処理
+  └─ default → delegateToPane() (アクティブペイン)
+```
+
+新しいペイン固有 Msg を追加する場合は、`PaneTarget() Mode` メソッドを実装するだけで `Update()` の変更は不要。
+
+### プレビューの非同期読み込み
+
+```
+カーソル移動 / モード切替
+  → previewCmd() が tea.Cmd を返す
+    → 非同期で ReadFileRange + Highlight を実行
+      → PreviewLoadedMsg として結果を受信
+        → パス照合で古いプレビューの上書きを防止
+          → previewContent にセット → View() で描画
+```
+
+- Grep モードでは `PreviewRange()` がヒット行を中央に配置する開始行を計算
+- `DecoratePreview()` で検索クエリにマッチする単語のみハイライト（シンタックスハイライトの前景色を保持）
+
 ## データフロー
 
 ### File Finder モード
 
 ```
 fd / rg --files
-  → []string (ファイルパス一覧)
+  → FilesLoadedMsg ([]string)
     → fuzzy.Find(query, items)
-      → []fuzzy.Match (スコア順)
-        → UI リスト表示
-          → 選択 → $EDITOR で開く
+      → UI リスト表示
+        → 選択 → $EDITOR で開く
 ```
 
 ### Live Grep モード
 
 ```
-キー入力 (デバウンス付き)
-  → rg --json <pattern>
-    → ParseRgJSON() → []Match{File, Line, Text}
-      → UI リスト表示
-        → 選択 → $EDITOR +行番号 ファイル
+キー入力 (300ms デバウンス)
+  → debounceTickMsg
+    → rg --json <pattern>
+      → GrepDoneMsg ([]grep.Match)
+        → UI リスト表示（ファイル名のみ）
+          → 選択 → $EDITOR +行番号 ファイル
 ```
 
 ### Preview
 
 ```
 カーソル移動
-  → preview.ReadFile(selectedPath)
-    → chroma でシンタックスハイライト
-      → 右ペインに描画
+  → previewCmd()
+    → preview.ReadFileRange(path, startLine, height)
+      → chroma でシンタックスハイライト
+        → PreviewLoadedMsg
+          → pane.DecoratePreview() でマッチ単語ハイライト
+            → 右ペインに描画
 ```
-
-## Bubbletea Elm Architecture
-
-UI 層は Elm Architecture に従う。副作用は全て `Cmd` として返し、Model 自体は純粋な状態遷移のみ行う。
-
-```
-     Msg (キー入力, ウィンドウリサイズ, 外部プロセス完了)
-      │
-      ▼
-  Update(msg) → (Model, Cmd)
-      │              │
-      ▼              ▼
-   新しい状態      副作用の実行
-      │          (rg 起動, ファイル読み込み等)
-      ▼
-   View() → string (ターミナル出力)
-```
-
-これにより Model テストでは Msg を投入して返却された Model の状態を検証でき、副作用 (Cmd) も返り値として取得できる。
 
 ## モード管理
 
 ```
 Model.mode: ModeFinder | ModeGrep
 
-切替: Tab キー (予定)
+切替: Tab キー
+  → switchMode()
+    → 現ペイン Blur + 新ペイン Reset + Focus
+    → previewCmd() でプレビュー更新
 
-ModeFinder: finder パッケージを使用
-ModeGrep:   grep パッケージを使用
+ModeFinder: FinderModel (finder パッケージを使用)
+ModeGrep:   GrepModel (grep パッケージを使用)
 preview:    両モード共通で右ペインに表示
 ```
 
@@ -101,7 +149,7 @@ preview:    両モード共通で右ペインに表示
 |---------|------|-------------|
 | `fd --type f` | ファイル一覧 | `rg --files` |
 | `rg --json <pattern>` | Live Grep | なし（必須） |
-| `$EDITOR` | ファイルを開く | なし |
+| `$EDITOR` | ファイルを開く | `vim` |
 
 ## テスト方針
 
@@ -110,20 +158,29 @@ preview:    両モード共通で右ペインに表示
 テストは対象コードと同じディレクトリに `_test.go` で配置する。
 
 ```
+internal/ui/
+  model.go
+  model_test.go        ← Model テスト
+  scenario_test.go     ← シナリオテスト（Msg 駆動）
+  golden_test.go       ← ゴールデンテスト
+  fuzz_test.go         ← Fuzz テスト（panic 検出）
+
 internal/grep/
   grep.go
-  grep_test.go              ← unit test
+  grep_test.go         ← unit test + fuzz test
   grep_integration_test.go  ← integration test (ビルドタグ付き)
 ```
 
 ### テスト種別
 
-| 対象 | 手法 | パッケージ |
-|------|------|-----------|
-| ファジーマッチ、rg パーサー | Table-Driven + Fuzz | finder, grep |
-| Model 状態遷移 | Msg → Model 検証 | ui |
-| View() 出力 | Golden Test (teatest) | ui |
-| fd/rg 実行を伴うテスト | Integration Test | finder, grep |
+| 対象 | 手法 | 目的 |
+|------|------|------|
+| ファジーマッチ、rg パーサー | Table-Driven + Fuzz | ロジック正確性 + 不正入力耐性 |
+| Model 状態遷移 | Msg → Model 検証 | Update の正しさ |
+| View() 出力 | Golden Test | レイアウト退行検知 |
+| 動作シナリオ | Scenario Test (Msg 駆動) | リファクタリング安全網 |
+| 異常操作 | Fuzz Test (ランダム Msg 列) | panic 防止 |
+| fd/rg 実行 | Integration Test | 外部コマンド連携 |
 
 ### Integration Test の分離
 
@@ -133,5 +190,3 @@ internal/grep/
 go test ./...                      # unit のみ
 go test -tags=integration ./...    # integration も含む
 ```
-
-Integration Test は外部コマンド（fd, rg）の実行を伴うテストが対象。
