@@ -228,6 +228,39 @@ func TestPreviewInGrepMode(t *testing.T) {
 	assert.Contains(t, stripANSI(m.previewContent), "package main")
 }
 
+func TestGrepDecoratePreviewTargetsCorrectLine(t *testing.T) {
+	g := NewGrepModel()
+	g.items = []string{"main.go:2:func main()"}
+
+	content := "package main\nfunc main() {\n}\n"
+	result := g.DecoratePreview(content, 40)
+
+	lines := strings.Split(result, "\n")
+	// stripANSI しても元テキストが残っていること（行が壊れていない）
+	assert.Equal(t, "package main", stripANSI(lines[0]))
+	assert.Equal(t, "func main() {", stripANSI(lines[1]))
+	assert.Equal(t, "}", stripANSI(lines[2]))
+}
+
+func TestGrepDecoratePreviewEmptyContent(t *testing.T) {
+	g := NewGrepModel()
+	g.items = []string{"main.go:1:package main"}
+	assert.Equal(t, "", g.DecoratePreview("", 40))
+}
+
+func TestGrepDecoratePreviewNoItems(t *testing.T) {
+	g := NewGrepModel()
+	content := "package main\n"
+	assert.Equal(t, content, g.DecoratePreview(content, 40))
+}
+
+func TestFinderDecoratePreviewPassthrough(t *testing.T) {
+	f := NewFinderModel()
+	content := "package main\nfunc main() {\n}\n"
+	result := f.DecoratePreview(content, 40)
+	assert.Equal(t, content, result, "Finder モードではプレビューを加工しない")
+}
+
 // --- View テスト ---
 
 func TestViewContainsQuery(t *testing.T) {

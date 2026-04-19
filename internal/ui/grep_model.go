@@ -189,6 +189,28 @@ func (g *GrepModel) Query() string   { return g.textInput.Value() }
 func (g *GrepModel) IsLoading() bool { return g.loading }
 func (g *GrepModel) Err() error      { return g.err }
 
+// DecoratePreview はプレビューコンテンツの該当行にハイライトを適用する。
+func (g *GrepModel) DecoratePreview(content string, width int) string {
+	if content == "" {
+		return content
+	}
+	item := g.SelectedItem()
+	if item == "" {
+		return content
+	}
+	_, lineNum := parseGrepItem(item)
+	if lineNum <= 0 {
+		return content
+	}
+
+	lines := strings.Split(content, "\n")
+	// lineNum は 1-based
+	if lineNum-1 < len(lines) {
+		lines[lineNum-1] = highlightLineStyle.Render(lines[lineNum-1])
+	}
+	return strings.Join(lines, "\n")
+}
+
 // TextInput は入力欄の View を返す（親 Model がヘッダーに組み込む用）。
 func (g *GrepModel) TextInput() textinput.Model { return g.textInput }
 

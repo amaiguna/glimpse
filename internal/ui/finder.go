@@ -188,6 +188,11 @@ func (f *FinderModel) Query() string   { return f.textInput.Value() }
 func (f *FinderModel) IsLoading() bool { return f.loading }
 func (f *FinderModel) Err() error      { return f.err }
 
+// DecoratePreview はプレビューコンテンツをそのまま返す（Finder モードでは装飾なし）。
+func (f *FinderModel) DecoratePreview(content string, width int) string {
+	return content
+}
+
 // TextInput は入力欄の View を返す（親 Model がヘッダーに組み込む用）。
 func (f *FinderModel) TextInput() textinput.Model { return f.textInput }
 

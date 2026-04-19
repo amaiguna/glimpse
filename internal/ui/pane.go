@@ -21,4 +21,7 @@ type Pane interface {
 	IsLoading() bool
 	// Err はエラーがあれば返す。
 	Err() error
+	// DecoratePreview はプレビューコンテンツにペイン固有の装飾を施す。
+	// 幅 width は表示可能なカラム数。
+	DecoratePreview(content string, width int) string
 }

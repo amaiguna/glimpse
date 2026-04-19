@@ -40,6 +40,12 @@ var selectedItemStyle = lipgloss.NewStyle().
 var normalItemStyle = lipgloss.NewStyle().
 	Foreground(colorWhite)
 
+// プレビュー該当行ハイライト
+var highlightLineStyle = lipgloss.NewStyle().
+	Background(lipgloss.Color("24")).  // 濃い青背景（青黒ターミナルで映える）
+	Foreground(lipgloss.Color("228")). // 明るい黄色文字
+	Bold(true)
+
 // エラー表示
 var errorStyle = lipgloss.NewStyle().
 	Foreground(lipgloss.Color("196")).

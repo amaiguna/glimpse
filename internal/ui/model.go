@@ -278,7 +278,7 @@ func (m Model) View() string {
 		MaxHeight(contentHeight + borderH).
 		Render(pane.View())
 
-	// プレビューコンテンツを表示サイズに切り詰め
+	// プレビューコンテンツを表示サイズに切り詰め + ペイン固有の装飾
 	previewText := m.previewContent
 	if previewText != "" {
 		lines := strings.Split(previewText, "\n")
@@ -289,6 +289,7 @@ func (m Model) View() string {
 			lines[i] = ansi.Truncate(line, previewWidth, "")
 		}
 		previewText = strings.Join(lines, "\n")
+		previewText = pane.DecoratePreview(previewText, previewWidth)
 	}
 
 	rightPane := previewPaneStyle.
