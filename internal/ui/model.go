@@ -121,9 +121,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) delegateToPane(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	if m.mode == ModeGrep {
-		_, cmd = m.grepPane.Update(msg)
+		pane, c := m.grepPane.Update(msg)
+		m.grepPane = pane.(*GrepModel)
+		cmd = c
 	} else {
-		_, cmd = m.finderPane.Update(msg)
+		pane, c := m.finderPane.Update(msg)
+		m.finderPane = pane.(*FinderModel)
+		cmd = c
 	}
 	m.updatePreview()
 	return m, cmd
@@ -247,7 +251,11 @@ func (m Model) View() string {
 	} else {
 		inputView = m.finderPane.TextInput().View()
 	}
-	header := headerStyle.Render(modeLabelStyle.Render("["+modeLabel+"]") + " " + inputView)
+	headerText := modeLabelStyle.Render("["+modeLabel+"]") + " " + inputView
+	header := headerStyle.Render(headerText)
+	if m.width > 0 {
+		header = ansi.Truncate(header, m.width, "")
+	}
 
 	// エラー表示
 	if pane.Err() != nil {
