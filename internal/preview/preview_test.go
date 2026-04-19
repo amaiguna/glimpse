@@ -72,6 +72,39 @@ func TestReadFileEmpty(t *testing.T) {
 	assert.Equal(t, "", got)
 }
 
+func TestReadFileRange(t *testing.T) {
+	// 10行のファイル
+	content := "L1\nL2\nL3\nL4\nL5\nL6\nL7\nL8\nL9\nL10\n"
+
+	tests := []struct {
+		name      string
+		startLine int
+		maxLines  int
+		want      string
+	}{
+		{"先頭から3行", 1, 3, "L1\nL2\nL3"},
+		{"3行目から3行", 3, 3, "L3\nL4\nL5"},
+		{"末尾付近", 9, 5, "L9\nL10\n"},
+		{"startLine が 0 の場合は 1 として扱う", 0, 2, "L1\nL2"},
+		{"startLine が負の場合は 1 として扱う", -5, 2, "L1\nL2"},
+		{"範囲外の startLine", 100, 3, ""},
+		{"maxLines が 0 なら全行", 3, 0, "L3\nL4\nL5\nL6\nL7\nL8\nL9\nL10\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := writeTempFile(t, "range.txt", content)
+			got, err := ReadFileRange(path, tt.startLine, tt.maxLines)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestReadFileRangeNotFound(t *testing.T) {
+	_, err := ReadFileRange("/nonexistent/file.txt", 1, 10)
+	assert.Error(t, err)
+}
+
 func TestHighlightDetectsLanguage(t *testing.T) {
 	goCode := "package main\n\nfunc main() {\n\tprintln(\"hello\")\n}\n"
 	path := writeTempFile(t, "main.go", goCode)

@@ -76,19 +76,17 @@ type debounceTickMsg struct {
 // PaneTarget は Grep ペインを返す。
 func (debounceTickMsg) PaneTarget() Mode { return ModeGrep }
 
-// previewMaxLines はプレビューペインに表示する最大行数。
-const previewMaxLines = 50
-
 // Model は telescope-tui の親モデル。
 // アクティブな Pane にメッセージをルーティングし、レイアウトを管理する。
 type Model struct {
-	mode           Mode
-	finderPane     *FinderModel
-	grepPane       *GrepModel
-	width          int
-	height         int
-	previewContent string
-	previewPath    string // 現在プレビュー中のファイルパス（照合用）
+	mode             Mode
+	finderPane       *FinderModel
+	grepPane         *GrepModel
+	width            int
+	height           int
+	previewContent   string
+	previewPath      string // 現在プレビュー中のファイルパス（照合用）
+	previewStartLine int    // 現在プレビュー中の開始行（照合用）
 }
 
 // NewModel は Model を初期化して返す。
@@ -239,20 +237,25 @@ func (m *Model) updatePaneSizes() {
 }
 
 // previewCmd は現在のアクティブペインのファイルパスに基づいてプレビュー読み込みの Cmd を返す。
-// ファイルパスが変わっていない場合は Cmd を発行しない。
+// ファイルパスまたは表示開始行が変わっていない場合は Cmd を発行しない。
 func (m *Model) previewCmd() tea.Cmd {
-	filePath := m.activePane().FilePath()
+	pane := m.activePane()
+	filePath := pane.FilePath()
 	if filePath == "" {
 		m.previewContent = ""
 		m.previewPath = ""
+		m.previewStartLine = 0
 		return nil
 	}
-	if filePath == m.previewPath {
+	visibleHeight := m.contentHeight()
+	startLine := pane.PreviewRange(visibleHeight)
+	if filePath == m.previewPath && startLine == m.previewStartLine {
 		return nil
 	}
 	m.previewPath = filePath
+	m.previewStartLine = startLine
 	return func() tea.Msg {
-		content, err := preview.ReadFile(filePath, previewMaxLines)
+		content, err := preview.ReadFileRange(filePath, startLine, visibleHeight)
 		if err != nil {
 			return PreviewLoadedMsg{
 				Content: fmt.Sprintf("error: %s", err.Error()),

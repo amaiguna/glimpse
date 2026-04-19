@@ -17,15 +17,16 @@ const debounceInterval = 300 * time.Millisecond
 // GrepModel はライブ grep モードのペイン。
 // rg --json をデバウンス付きで実行し、結果を表示する。
 type GrepModel struct {
-	textInput   textinput.Model
-	items       []string // "file:line:text" 形式
-	cursor      int
-	offset      int // スクロールオフセット（表示先頭行）
-	viewHeight  int // 表示可能行数（親から設定）
-	viewWidth   int // 表示可能幅（親から設定）
-	loading     bool
-	err         error
-	debounceTag int
+	textInput        textinput.Model
+	items            []string // "file:line:text" 形式
+	cursor           int
+	offset           int // スクロールオフセット（表示先頭行）
+	viewHeight       int // 表示可能行数（親から設定）
+	viewWidth        int // 表示可能幅（親から設定）
+	loading          bool
+	err              error
+	debounceTag      int
+	previewStartLine int // PreviewRange が最後に返した開始行（DecoratePreview で使用）
 }
 
 // NewGrepModel は GrepModel を初期化して返す。
@@ -189,7 +190,29 @@ func (g *GrepModel) Query() string   { return g.textInput.Value() }
 func (g *GrepModel) IsLoading() bool { return g.loading }
 func (g *GrepModel) Err() error      { return g.err }
 
+// PreviewRange はプレビューの表示開始行（1-based）を返す。
+// ヒット行がプレビューの中央付近に来るよう計算する。
+func (g *GrepModel) PreviewRange(visibleHeight int) int {
+	item := g.SelectedItem()
+	if item == "" {
+		g.previewStartLine = 1
+		return 1
+	}
+	_, hitLine := parseGrepItem(item)
+	if hitLine <= 0 {
+		g.previewStartLine = 1
+		return 1
+	}
+	start := hitLine - visibleHeight/2
+	if start < 1 {
+		start = 1
+	}
+	g.previewStartLine = start
+	return start
+}
+
 // DecoratePreview はプレビューコンテンツの該当行にハイライトを適用する。
+// 行番号は PreviewRange で返した開始行からの相対位置で計算する。
 func (g *GrepModel) DecoratePreview(content string, width int) string {
 	if content == "" {
 		return content
@@ -203,10 +226,11 @@ func (g *GrepModel) DecoratePreview(content string, width int) string {
 		return content
 	}
 
+	// previewStartLine からの相対インデックスに変換
+	relIdx := lineNum - g.previewStartLine
 	lines := strings.Split(content, "\n")
-	// lineNum は 1-based
-	if lineNum-1 < len(lines) {
-		lines[lineNum-1] = highlightLineStyle.Render(lines[lineNum-1])
+	if relIdx >= 0 && relIdx < len(lines) {
+		lines[relIdx] = highlightLineStyle.Render(lines[relIdx])
 	}
 	return strings.Join(lines, "\n")
 }

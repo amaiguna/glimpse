@@ -2,6 +2,7 @@ package ui
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -252,9 +253,36 @@ func TestPreviewInGrepMode(t *testing.T) {
 	assert.Contains(t, stripANSI(got.previewContent), "package main")
 }
 
+func TestGrepPreviewRange(t *testing.T) {
+	tests := []struct {
+		name          string
+		item          string
+		visibleHeight int
+		want          int
+	}{
+		{"中央配置", "main.go:50:text", 20, 40},
+		{"先頭クランプ", "main.go:3:text", 20, 1},
+		{"1行目", "main.go:1:text", 20, 1},
+		{"アイテムなし", "", 20, 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGrepModel()
+			if tt.item != "" {
+				g.items = []string{tt.item}
+			}
+			got := g.PreviewRange(tt.visibleHeight)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestGrepDecoratePreviewTargetsCorrectLine(t *testing.T) {
 	g := NewGrepModel()
 	g.items = []string{"main.go:2:func main()"}
+
+	// PreviewRange を呼んで previewStartLine をセット
+	g.PreviewRange(20)
 
 	content := "package main\nfunc main() {\n}\n"
 	result := g.DecoratePreview(content, 40)
@@ -266,9 +294,34 @@ func TestGrepDecoratePreviewTargetsCorrectLine(t *testing.T) {
 	assert.Equal(t, "}", stripANSI(lines[2]))
 }
 
+func TestGrepDecoratePreviewWithOffset(t *testing.T) {
+	g := NewGrepModel()
+	g.items = []string{"main.go:50:target line"}
+
+	// visibleHeight=20 → startLine=40
+	startLine := g.PreviewRange(20)
+	assert.Equal(t, 40, startLine)
+
+	// プレビューは40行目から表示されている想定
+	// 50行目は表示上のインデックス10 (50-40=10)
+	lines := make([]string, 20)
+	for i := range lines {
+		lines[i] = fmt.Sprintf("line %d", startLine+i)
+	}
+	content := strings.Join(lines, "\n")
+	result := g.DecoratePreview(content, 80)
+
+	resultLines := strings.Split(result, "\n")
+	// 10番目の行 (0-indexed) がハイライト対象（stripANSI で元テキストが残る）
+	assert.Equal(t, "line 50", stripANSI(resultLines[10]))
+	// ハイライト対象外の行は変更なし
+	assert.Equal(t, "line 49", resultLines[9])
+}
+
 func TestGrepDecoratePreviewEmptyContent(t *testing.T) {
 	g := NewGrepModel()
 	g.items = []string{"main.go:1:package main"}
+	g.PreviewRange(20)
 	assert.Equal(t, "", g.DecoratePreview("", 40))
 }
 

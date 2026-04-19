@@ -34,6 +34,33 @@ func ReadFile(path string, maxLines int) (string, error) {
 	return strings.Join(lines, "\n") + "\n", nil
 }
 
+// ReadFileRange はファイルの startLine 行目（1-based）から最大 maxLines 行を読み込んで返す。
+// startLine が 1 未満の場合は 1 として扱う。
+func ReadFileRange(path string, startLine, maxLines int) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	content := string(data)
+	if content == "" {
+		return "", nil
+	}
+	if startLine < 1 {
+		startLine = 1
+	}
+
+	lines := strings.Split(content, "\n")
+	// startLine は 1-based なのでスライスは startLine-1 から
+	if startLine-1 >= len(lines) {
+		return "", nil
+	}
+	lines = lines[startLine-1:]
+	if maxLines > 0 && len(lines) > maxLines {
+		lines = lines[:maxLines]
+	}
+	return strings.Join(lines, "\n"), nil
+}
+
 // Highlight はファイルパスから言語を推定し、シンタックスハイライト付きの ANSI 文字列を返す。
 // 空文字列の場合はそのまま空文字列を返す。
 func Highlight(path string, content string) (string, error) {

@@ -33,6 +33,9 @@ type Pane interface {
 	// OpenTarget はエディタで開く対象のファイルパスと行番号を返す。
 	// 選択アイテムがない場合は空文字列と 0 を返す。
 	OpenTarget() (file string, line int)
+	// PreviewRange はプレビューの表示開始行（1-based）を返す。
+	// visibleHeight は表示可能な行数。ヒット行を中央に配置するために使う。
+	PreviewRange(visibleHeight int) int
 	// DecoratePreview はプレビューコンテンツにペイン固有の装飾を施す。
 	// 幅 width は表示可能なカラム数。
 	DecoratePreview(content string, width int) string
