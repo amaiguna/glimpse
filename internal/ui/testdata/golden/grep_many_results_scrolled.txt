@@ -1,0 +1,23 @@
+ [Grep] > Handle 
+┌──────────────────────┐┌──────────────────────────────────────────────────────┐
+│  internal/service/han││package service                                       │
+│  internal/service/han││                                                      │
+│  internal/service/han││                                                      │
+│  internal/service/han││                                                      │
+│  internal/service/han││                                                      │
+│  internal/service/han││                                                      │
+│  internal/service/han││                                                      │
+│  internal/service/han││                                                      │
+│  internal/service/han││                                                      │
+│  internal/service/han││                                                      │
+│  internal/service/han││                                                      │
+│  internal/service/han││                                                      │
+│  internal/service/han││                                                      │
+│  internal/service/han││                                                      │
+│  internal/service/han││                                                      │
+│  internal/service/han││                                                      │
+│  internal/service/han││                                                      │
+│  internal/service/han││                                                      │
+│  internal/service/han││                                                      │
+│> internal/service/han││                                                      │
+└──────────────────────┘└──────────────────────────────────────────────────────┘
