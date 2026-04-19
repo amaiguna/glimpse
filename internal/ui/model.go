@@ -30,20 +30,32 @@ type FilesLoadedMsg struct {
 	Items []string
 }
 
+// PaneTarget は Finder ペインを返す。
+func (FilesLoadedMsg) PaneTarget() Mode { return ModeFinder }
+
 // FilesErrorMsg はファイル列挙中にエラーが発生したことを通知する。
 type FilesErrorMsg struct {
 	Err error
 }
+
+// PaneTarget は Finder ペインを返す。
+func (FilesErrorMsg) PaneTarget() Mode { return ModeFinder }
 
 // GrepDoneMsg は grep 検索が完了したことを通知する。
 type GrepDoneMsg struct {
 	Matches []grep.Match
 }
 
+// PaneTarget は Grep ペインを返す。
+func (GrepDoneMsg) PaneTarget() Mode { return ModeGrep }
+
 // GrepErrorMsg は grep 検索中にエラーが発生したことを通知する。
 type GrepErrorMsg struct {
 	Err error
 }
+
+// PaneTarget は Grep ペインを返す。
+func (GrepErrorMsg) PaneTarget() Mode { return ModeGrep }
 
 // EditorFinishedMsg はエディタプロセスが終了したことを通知する。
 type EditorFinishedMsg struct {
@@ -54,6 +66,9 @@ type EditorFinishedMsg struct {
 type debounceTickMsg struct {
 	tag int
 }
+
+// PaneTarget は Grep ペインを返す。
+func (debounceTickMsg) PaneTarget() Mode { return ModeGrep }
 
 // previewMaxLines はプレビューペインに表示する最大行数。
 const previewMaxLines = 50
@@ -112,9 +127,35 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case EditorFinishedMsg:
 		return m, nil
+
+	// ペイン固有 Msg → PaneTarget() で宛先を判別
+	case paneMsg:
+		switch msg.PaneTarget() {
+		case ModeGrep:
+			return m.delegateToGrep(msg)
+		default:
+			return m.delegateToFinder(msg)
+		}
+
 	default:
 		return m.delegateToPane(msg)
 	}
+}
+
+// delegateToFinder は FinderPane にメッセージを委譲する。
+func (m Model) delegateToFinder(msg tea.Msg) (tea.Model, tea.Cmd) {
+	pane, cmd := m.finderPane.Update(msg)
+	m.finderPane = pane.(*FinderModel)
+	m.updatePreview()
+	return m, cmd
+}
+
+// delegateToGrep は GrepPane にメッセージを委譲する。
+func (m Model) delegateToGrep(msg tea.Msg) (tea.Model, tea.Cmd) {
+	pane, cmd := m.grepPane.Update(msg)
+	m.grepPane = pane.(*GrepModel)
+	m.updatePreview()
+	return m, cmd
 }
 
 // delegateToPane はアクティブなペインにメッセージを委譲し、プレビューを更新する。

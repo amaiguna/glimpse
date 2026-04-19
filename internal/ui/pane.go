@@ -2,6 +2,13 @@ package ui
 
 import tea "github.com/charmbracelet/bubbletea"
 
+// paneMsg は特定のペインに宛てられた Msg が実装するインターフェース。
+// 親 Model の Update はこのインターフェースで宛先を判別し、対応するペインにルーティングする。
+type paneMsg interface {
+	tea.Msg
+	PaneTarget() Mode
+}
+
 // Pane はファインダーの各モード（Finder, Grep）が実装する共通インターフェース。
 // 親 Model はアクティブな Pane にメッセージをディスパッチし、View を取得する。
 type Pane interface {
