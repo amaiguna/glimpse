@@ -1,0 +1,5 @@
+Line 1 normal text SEARCHME
+Line 2 title hijack: ]0;HIJACKED_BY_PREVIEWcontinuation SEARCHME
+Line 3 color injection: [41;97mWHITE_ON_RED[0m SEARCHME
+Line 4 clear screen: [2J[HSCREEN_CLEARED SEARCHME
+Line 5 normal text SEARCHME

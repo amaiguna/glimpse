@@ -1,1 +1,5 @@
 glimpse
+
+# security_audit 配下の repro/ が setup.sh で生成するファイル（追跡外）
+docs/security_audit/*/repro/name_*HIJACKED*
+docs/security_audit/*/repro/normal.txt
