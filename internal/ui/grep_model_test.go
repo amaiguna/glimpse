@@ -134,6 +134,41 @@ func TestGrepView(t *testing.T) {
 	assert.NotContains(t, view, "func helper()")
 }
 
+// H-3 回帰: grep 結果のファイル名にエスケープシーケンスが含まれていても、
+// View 出力には raw な ESC バイトの SGR 注入が残らないこと。
+func TestGrepViewSanitizesEscapesInFilenames(t *testing.T) {
+	evilItem := "name_\x1b[41;97mHIJACKED\x1b[0m_.go:42:matched text"
+	g := NewGrepModel()
+	g.items = []string{evilItem}
+	g.cursor = 0
+	g.SetViewSize(10, 80)
+
+	view := g.View()
+
+	assert.NotContains(t, view, "\x1b[41;97m", "raw SGR escape leaked into View")
+	assert.NotContains(t, view, "\x1b[0m", "raw SGR reset leaked into View")
+	assert.Contains(t, view, `\x1b[41;97m`, "サニタイズ済みの可視表現が描画される")
+	assert.Contains(t, view, "HIJACKED")
+}
+
+// SelectedItem / FilePath / OpenTarget は描画用ではなくファイル読み込み・
+// エディタ起動に使うため、raw のままを返すこと。
+// 特に OpenTarget はパスと行番号を分離して返すので、ESC 含むパスでも parseGrepItem が
+// 正しく動作することを確認する。
+func TestGrepRawPathsForOperations(t *testing.T) {
+	evilName := "weird_\x1b[31mname\x1b[0m.go"
+	evilItem := evilName + ":42:matched"
+	g := NewGrepModel()
+	g.items = []string{evilItem}
+	g.cursor = 0
+
+	assert.Equal(t, evilItem, g.SelectedItem())
+	assert.Equal(t, evilName, g.FilePath())
+	gotPath, gotLine := g.OpenTarget()
+	assert.Equal(t, evilName, gotPath)
+	assert.Equal(t, 42, gotLine)
+}
+
 func TestGrepReset(t *testing.T) {
 	g := NewGrepModel()
 	g.textInput.SetValue("foo")

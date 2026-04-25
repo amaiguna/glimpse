@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/amaiguna/glimpse-tui/internal/finder"
+	"github.com/amaiguna/glimpse-tui/internal/sanitize"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -172,7 +173,9 @@ func (f *FinderModel) View() string {
 			b.WriteString("\n")
 		}
 		absIdx := f.offset + i
-		display := truncateToWidth(item, itemWidth)
+		// 描画用にサニタイズ。SelectedItem/FilePath/OpenTarget は raw のまま使うため
+		// ここで保持される items 自体は変更しない。
+		display := truncateToWidth(sanitize.ForTerminal(item), itemWidth)
 		if absIdx == f.cursor {
 			b.WriteString(selectedItemStyle.Render("> " + display))
 		} else {

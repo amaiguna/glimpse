@@ -9,15 +9,15 @@
 
 ## サマリ
 
-| 優先度 | 件数 | 概要 |
-|---|---|---|
-| High | 3 | ターミナルエスケープシーケンス注入（preview/ファイル名/grep 行） |
-| Medium | 3 | preview OOM、エディタ引数フラグ注入、`exec.CommandContext` 不使用 |
-| Low | 3 | symlink、PATH 汚染、環境変数無制限継承 |
-| Info | 4 | stdout サイズ未制限、`parseGrepItem` 境界、非推奨 API、未使用コード |
+| 優先度 | 件数 | 概要 | ステータス |
+|---|---|---|---|
+| High | 3 | ターミナルエスケープシーケンス注入（preview/ファイル名/grep 行） | ✅ 対応済（2026-04-24） |
+| Medium | 3 | preview OOM、エディタ引数フラグ注入、`exec.CommandContext` 不使用 | 未対応 |
+| Low | 3 | symlink、PATH 汚染、環境変数無制限継承 | 未対応 |
+| Info | 4 | stdout サイズ未制限、`parseGrepItem` 境界、非推奨 API、未使用コード | 未対応 |
 
 依存関係・メモリモデルはクリーン（`govulncheck` / `osv-scanner` / `go test -race` すべて無指摘）。
-最大リスクは **TUI 特有のターミナルエスケープ注入**で、汎用ツールでは検出できない観点。
+最大リスクは **TUI 特有のターミナルエスケープ注入**で、汎用ツールでは検出できない観点。High 3件は共通サニタイザ `internal/sanitize` の導入で解消した。
 
 ---
 
@@ -62,58 +62,40 @@
 
 ### High
 
-#### H-1: ファイル内容経由のターミナルエスケープ注入
+#### H-1: ファイル内容経由のターミナルエスケープ注入 ✅ 対応済
 
 - 該当箇所: `internal/preview/preview.go:43, 65` → `internal/ui/model.go:334-343` で描画
 - 内容: `chroma` は入力テキスト中の `\x1b[…` を除去しない。`ansi.Truncate` は本物の ANSI と区別できないのでそのまま保持する。ファイル内容に制御シーケンスを含ませた悪意あるファイルを preview に表示しただけで、タイトルバー書換・画面クリア+偽プロンプト表示・OSC 52 クリップボード書き込みなどが可能。
 - 対策: `os.ReadFile` の結果を chroma に渡す**前**に制御文字サニタイズを適用する。
+- 実装: `internal/preview/preview.go` の `ReadFile` / `ReadFileRange` で読み込み直後に `sanitize.ForTerminal` を適用。`Highlight` のエラーフォールバック経路（`internal/ui/model.go`）でも raw が表示されないよう、reader 層でサニタイズする方針を採用。回帰テスト: `TestReadFileSanitizesEscapes`, `TestReadFileRangeSanitizesEscapes`。
 
-#### H-2: ファイル名経由のターミナルエスケープ注入
+#### H-2: ファイル名経由のターミナルエスケープ注入 ✅ 対応済
 
 - 該当箇所: `internal/finder/finder.go:8-22`（fd/rg 出力）→ `internal/ui/finder.go:155-182` 描画
 - 内容: ファイル名には改行以外のほぼ全バイトを含めることができ、`fd` / `rg --files` はデフォルトでそれらを出力する。悪意ある第三者が `$'\x1b[2J\x1b[H偽プロンプト'` のようなファイルを置いたディレクトリで被害者が glimpse を起動すると、左ペイン描画時に画面が乗っ取られる。
 - 対策: View 前に同サニタイザを通す。
+- 実装: `internal/ui/finder.go` の `View()` 内で `sanitize.ForTerminal(item)` → `truncateToWidth` の順に適用。`SelectedItem` / `FilePath` / `OpenTarget` は `os.ReadFile` / `exec.Command` 用に raw を返す（描画と用途が異なるため `items` 自体は無加工で保持）。回帰テスト: `TestFinderViewSanitizesEscapesInFilenames`, `TestFinderRawPathsForOperations`。
 
-#### H-3: grep 行内容経由のターミナルエスケープ注入
+#### H-3: grep 行内容経由のターミナルエスケープ注入 ✅ 対応済
 
 - 該当箇所: `internal/grep/grep.go:86`（`rg --json` の `lines.text` を格納）→ `internal/ui/grep_model.go:174-180` 描画
 - 内容: `rg --json` の行テキストは生ファイル内容。H-1 と同じ攻撃面が grep モードでも成立。
 - 対策: `formatGrepMatches` の時点、あるいは View 直前にサニタイズ。
+- 実装: `internal/ui/grep_model.go` の `View()` 内で `parseGrepItem` 抽出後の `displayItem`（=ファイルパス）に `sanitize.ForTerminal` を適用。Grep モードの View はファイル名のみを表示するためファイル名経路が攻撃面の中心であり、ファイル内容のヒット行は preview 側（H-1 で防御済）で表示される。raw な `items` は `OpenTarget` / `FilePath` 用に保持。回帰テスト: `TestGrepViewSanitizesEscapesInFilenames`, `TestGrepRawPathsForOperations`。
 
-#### 共通対策: サニタイザ実装例
+#### 共通対策: サニタイザ実装
 
-```go
-// internal/ui/sanitize.go（新規）
-package ui
+`internal/sanitize/sanitize.go` に `ForTerminal` を新規実装した。下記の点で当初提案より強化している:
 
-import (
-    "fmt"
-    "strings"
-    "unicode"
-)
+- `unicode.In(r, unicode.Cc, unicode.Cf)` を使用し、BiDi 制御文字（U+202A〜202E, U+2066〜2069 等）も `\uNNNN` 形式で可視化（**Trojan Source / CVE-2021-42574 対策**）。`golang.org/x/text/unicode/bidi` への依存追加は不要。
+- 不正 UTF-8 バイトを `utf8.DecodeRuneInString` で検出し `\xNN` で可視化（生バイトを描画に流さない）。
+- 改行 `\n` とタブ `\t` のみホワイトリストとして通し、それ以外の C0/C1/DEL を全可視化。
 
-// sanitizeForTerminal は描画経路に流す文字列から
-// 改行・タブ以外の制御文字と ANSI エスケープを除去・可視化する。
-func sanitizeForTerminal(s string) string {
-    var b strings.Builder
-    b.Grow(len(s))
-    for _, r := range s {
-        switch {
-        case r == '\n' || r == '\t':
-            b.WriteRune(r)
-        case r < 0x20 || r == 0x7f:
-            b.WriteString(fmt.Sprintf("\\x%02x", r))
-        case unicode.IsControl(r):
-            b.WriteString(fmt.Sprintf("\\u%04x", r))
-        default:
-            b.WriteRune(r)
-        }
-    }
-    return b.String()
-}
-```
+テスト戦略（`internal/sanitize/sanitize_test.go`）:
 
-Trojan Source (CVE-2021-42574) 対策を強化する場合は `golang.org/x/text/unicode/bidi` で BiDi 制御文字も検出・除去する。
+- **テーブル駆動**で OSC 0/52/8、SGR、画面クリア、BEL/NUL/DEL、BiDi RLO/LRO/RLI、C1 制御、不正 UTF-8 を網羅（20ケース）。
+- **冪等性プロパティ** `TestForTerminalIdempotent`（`ForTerminal(ForTerminal(s)) == ForTerminal(s)`）。
+- **不変条件 fuzz** `FuzzForTerminal`: 任意バイト列入力に対し、出力に ESC / DEL / 改行タブ以外の C0 / BiDi 制御 が含まれず、UTF-8 として valid、かつ冪等であること。100K execs 無 panic。
 
 ### Medium
 
@@ -175,10 +157,9 @@ Trojan Source (CVE-2021-42574) 対策を強化する場合は `golang.org/x/text
 
 追加推奨:
 
-1. **`FuzzSanitizeForTerminal`**（H-1/H-2/H-3 修正後）
-   - 任意バイト列で panic せず、出力に制御バイト (0x00–0x1f, 0x7f) や ANSI エスケープ (`\x1b`) が含まれないことを不変条件に。
+1. ~~**`FuzzSanitizeForTerminal`**（H-1/H-2/H-3 修正後）~~ → ✅ `FuzzForTerminal` (`internal/sanitize/sanitize_test.go`) として実装済。任意バイト列に対し ESC/DEL/C0/BiDi 非含有、UTF-8 valid、冪等を不変条件として検証。
 
-2. **`FuzzParseGrepItem`** (`internal/ui/grep_model.go:297`)
+2. **`FuzzParseGrepItem`** (`internal/ui/grep_model.go:300`)
    - ランダム入力で常に panic しないこと。`strings.SplitN` + `strconv.Atoi` の組み合わせの保険。
 
 3. **`FuzzReadFileRange`** (`internal/preview/preview.go:64`)
@@ -188,12 +169,12 @@ Trojan Source (CVE-2021-42574) 対策を強化する場合は `golang.org/x/text
 
 ## 推奨対応順序（ROI 順）
 
-1. **H-1/H-2/H-3**: 共通サニタイザ導入 + 3 経路に適用。1ファイル追加 + 呼出3箇所で完結。
+1. ~~**H-1/H-2/H-3**: 共通サニタイザ導入 + 3 経路に適用。1ファイル追加 + 呼出3箇所で完結。~~ → ✅ 2026-04-24 完了（`internal/sanitize` 新設、preview/finder/grep の 3 箇所に適用、`FuzzForTerminal` 含む TDD で実装）。
 2. **M-1**: preview の上限導入（既存 `binarySniffSize` 周辺に新定数、`ReadFile`/`ReadFileRange` 書き換え）。
 3. **M-2**: エディタ `--` セパレータ追加（1行修正）。
 4. **M-3**: `exec.CommandContext` へ移行（`grep.Search` / `finder.ListFiles` のシグネチャ拡張が必要）。
 5. Low/Info は余裕のあるタイミングで対応。
-6. **Fuzz 追加**: サニタイザと ReadFileRange の上限導入後に実施。
+6. **Fuzz 追加**: `FuzzForTerminal` は導入済。残る `FuzzParseGrepItem` / `FuzzReadFileRange` は M-1 の上限導入後に実施。
 
 ---
 

@@ -105,6 +105,35 @@ func TestReadFileRangeNotFound(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// 悪意あるファイル内容（ANSI エスケープ・OSC・BiDi）が描画安全な形に変換されて返ることを確認。
+// H-1 の回帰テスト。
+func TestReadFileRangeSanitizesEscapes(t *testing.T) {
+	malicious := "Line1\nLine2 \x1b]0;PWNED\x07\nLine3 \x1b[31mRED\x1b[0m\nLine4 \u202eRTL\nLine5\n"
+	path := writeTempFile(t, "evil.txt", malicious)
+
+	got, err := ReadFileRange(path, 1, 10)
+	require.NoError(t, err)
+
+	assert.NotContains(t, got, "\x1b", "ESC byte must be removed")
+	assert.NotContains(t, got, "\x07", "BEL byte must be removed")
+	assert.NotContains(t, got, "\u202e", "BiDi RLO must be removed")
+	// 通常文字は残る
+	assert.Contains(t, got, "Line1")
+	assert.Contains(t, got, "RED")
+	assert.Contains(t, got, "PWNED")
+}
+
+func TestReadFileSanitizesEscapes(t *testing.T) {
+	malicious := "before\x1b[2J\x1b[Hafter\n"
+	path := writeTempFile(t, "evil.txt", malicious)
+
+	got, err := ReadFile(path, 0)
+	require.NoError(t, err)
+	assert.NotContains(t, got, "\x1b")
+	assert.Contains(t, got, "before")
+	assert.Contains(t, got, "after")
+}
+
 func TestHighlightDetectsLanguage(t *testing.T) {
 	goCode := "package main\n\nfunc main() {\n\tprintln(\"hello\")\n}\n"
 	path := writeTempFile(t, "main.go", goCode)

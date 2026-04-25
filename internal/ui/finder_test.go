@@ -165,6 +165,40 @@ func TestFinderView(t *testing.T) {
 	assert.Contains(t, view, "  go.mod")
 }
 
+// H-2 回帰: ファイル名にエスケープシーケンスが含まれていても、
+// View 出力には生の ESC バイトが残らないこと。
+func TestFinderViewSanitizesEscapesInFilenames(t *testing.T) {
+	evilName := "name_\x1b[41;97mHIJACKED\x1b[0m_.txt"
+	f := NewFinderModel()
+	f.items = []string{evilName, "normal.go"}
+	f.cursor = 0
+	f.loading = false
+	f.SetViewSize(10, 80)
+
+	view := f.View()
+
+	assert.NotContains(t, view, "\x1b[41;97m", "raw SGR escape leaked into View")
+	assert.NotContains(t, view, "\x1b[0m", "raw SGR reset leaked into View")
+	// 可視化された安全表現は残る
+	assert.Contains(t, view, `\x1b[41;97m`)
+	assert.Contains(t, view, "HIJACKED")
+}
+
+// SelectedItem / FilePath / OpenTarget は描画用ではなく
+// ファイル読み込み・エディタ起動に使うため、raw のままを返すこと。
+func TestFinderRawPathsForOperations(t *testing.T) {
+	evilName := "weird_\x1b[31mname\x1b[0m.go"
+	f := NewFinderModel()
+	f.items = []string{evilName}
+	f.cursor = 0
+
+	assert.Equal(t, evilName, f.SelectedItem())
+	assert.Equal(t, evilName, f.FilePath())
+	gotPath, gotLine := f.OpenTarget()
+	assert.Equal(t, evilName, gotPath)
+	assert.Equal(t, 0, gotLine)
+}
+
 func TestFinderReset(t *testing.T) {
 	f := NewFinderModel()
 	f.allFiles = []string{"a", "b"}

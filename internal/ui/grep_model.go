@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/amaiguna/glimpse-tui/internal/grep"
+	"github.com/amaiguna/glimpse-tui/internal/sanitize"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -169,7 +170,9 @@ func (g *GrepModel) View() string {
 		}
 		absIdx := g.offset + i
 		displayItem, _ := parseGrepItem(item)
-		display := truncateToWidth(displayItem, itemWidth)
+		// 描画用にサニタイズ。SelectedItem/FilePath/OpenTarget は raw のまま使うため
+		// ここで保持される items 自体は変更しない。
+		display := truncateToWidth(sanitize.ForTerminal(displayItem), itemWidth)
 		if absIdx == g.cursor {
 			b.WriteString(selectedItemStyle.Render("> " + display))
 		} else {
