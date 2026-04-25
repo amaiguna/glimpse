@@ -41,6 +41,12 @@ go test ./internal/grep -fuzz FuzzParseRgJSON
 # Run fuzz tests (UI panic 検出)
 go test ./internal/ui -fuzz FuzzModelUpdateView -fuzztime 10s
 
+# Run fuzz tests (grep item パーサ不変条件)
+go test ./internal/ui -run '^$' -fuzz FuzzParseGrepItem -fuzztime 10s
+
+# Run fuzz tests (preview ReadFileRange の panic / sanitize 不変条件)
+go test ./internal/preview -run '^$' -fuzz FuzzReadFileRange -fuzztime 10s
+
 # Update golden files
 go test ./internal/ui -update
 ```

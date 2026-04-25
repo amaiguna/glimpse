@@ -1,11 +1,27 @@
 # セキュリティ監査レポート (2026-04-24)
 
+**Status: Closed (2026-04-25)**
+
 `go-cli-security-audit` skill のワークフロー（Phase 1〜4）に基づき実施。
 
 - 対象コミット: `cf8e186` (main)
 - Go バージョン: `go1.26.2-X:nodwarf5 linux/amd64`
 - 対象範囲: プロジェクト全体（`./...`）
 - High 項目の再現手順: [`repro/README.md`](repro/README.md)
+
+## クロージングノート (2026-04-25)
+
+本監査の全 13 件（High×3 / Medium×3 / Low×3 / Info×4）と Phase 4 の Fuzz 追加 2 件について、対応または評価判断が完了したためクローズする。
+
+- **対応済 (12件)**: H-1, H-2, H-3, M-1, M-2, M-3, L-2, L-3, I-1, I-2, I-3, I-4
+- **Won't-fix (1件)**: L-1（symlink）— 脅威モデル評価の結果。`cat` と同等で glimpse 固有の攻撃面ではなく、UX 影響も大きいため。次回監査時に fd/rg のデフォルト挙動変更や `--follow` 相当の独自有効化があれば再評価する。
+- **Phase 4 Fuzz**: `FuzzForTerminal` / `FuzzParseGrepItem` / `FuzzReadFileRange` 追加完了。`FuzzParseGrepItem` は実装中に `:00` 入力での line==0 曖昧バグを 1 件検出し、parse 仕様を 1-based 強制に修正。
+
+最終確認: `go test ./...` / `go test -tags=integration ./...` / `go vet ./...` / `staticcheck ./...` いずれも無指摘。
+
+本ディレクトリは以降 immutable とする。再発見・再評価が必要な項目は次回監査の新ディレクトリで取り扱う（[`docs/security_audit/README.md`](../README.md) 参照）。
+
+---
 
 ## サマリ
 
@@ -192,11 +208,19 @@
 
 1. ~~**`FuzzSanitizeForTerminal`**（H-1/H-2/H-3 修正後）~~ → ✅ `FuzzForTerminal` (`internal/sanitize/sanitize_test.go`) として実装済。任意バイト列に対し ESC/DEL/C0/BiDi 非含有、UTF-8 valid、冪等を不変条件として検証。
 
-2. **`FuzzParseGrepItem`** (`internal/ui/grep_model.go:300`)
-   - ランダム入力で常に panic しないこと。`strings.SplitN` + `strconv.Atoi` の組み合わせの保険。
+2. ~~**`FuzzParseGrepItem`**~~ → ✅ 2026-04-25 完了 (`internal/ui/model_test.go`)。任意の文字列に対し:
+   - panic しない、`line >= 0`、`file` は input の prefix
+   - `line > 0` のとき: `input[:len(file)]==file` かつ続く `:` の後の digit run が line と一致し、その後は `:` か文末
+   
+   **fuzz 検出バグ**: 入力 `":00"` で `parseGrepItem` が `("", 0)` を返していた（line==0 が parse 成功扱いになり、parse 失敗の sentinel と矛盾）。grep 出力の line は 1-based なので `line<=0` を parse 失敗扱いに変更し、`TestParseGrepItem` にも回帰ケース 2 件 追加。15 秒 fuzz で 54万実行、追加発見ゼロ。
 
-3. **`FuzzReadFileRange`** (`internal/preview/preview.go:64`)
-   - 一時ファイルにランダム bytes を書き、`startLine`/`maxLines` ランダムで呼んで panic しないこと。M-1 の上限導入後は「戻り値のサイズが上限以下」も不変条件に追加。
+3. ~~**`FuzzReadFileRange`**~~ → ✅ 2026-04-25 完了 (`internal/preview/preview_test.go`)。ランダムな content（最大 64KB にキャップ）と任意の `startLine` / `maxLines` で:
+   - panic しない
+   - 戻り値が valid UTF-8（sanitize 通過の保証）
+   - raw ESC / BEL / BiDi 制御が含まれない
+   - 戻り値サイズが `len(content)*8 + 1024` 以下（sanitize の visualize 拡張上界）
+   
+   15 秒 fuzz で発見ゼロ（I/O 律速で約 3.5万実行、30 new interesting でカバレッジ拡大確認）。
 
 ---
 
@@ -210,7 +234,7 @@
 6. ~~**L-3**: rg/fd 子プロセスの env をホワイトリスト化。~~ → ✅ 2026-04-25 完了（`whitelistedEnv()` で `PATH`/`HOME`/`LANG`/`LC_*` のみ通す。エディタは UX 維持のため対象外）。
 7. **L-1**（symlink）は ⚠️ **Won't-fix**（2026-04-25 判定）。脅威モデル上、privilege escalation がなく `cat` と同等で glimpse 固有の攻撃面ではないため。詳細は L-1 セクション参照。
 8. ~~**Info 系**~~ → ✅ 2026-04-25 完了（I-1〜I-4 全対応。`staticcheck` 無指摘）。
-9. **Fuzz 追加**: `FuzzForTerminal` は導入済。残る `FuzzParseGrepItem` / `FuzzReadFileRange` は未着手。
+9. ~~**Fuzz 追加**~~ → ✅ 2026-04-25 完了（`FuzzParseGrepItem` / `FuzzReadFileRange` 追加。前者は fuzz 駆動で `:00` 入力の line==0 曖昧バグを 1 件発見し修正）。
 
 ---
 
