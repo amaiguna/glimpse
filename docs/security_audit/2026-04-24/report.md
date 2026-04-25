@@ -13,11 +13,11 @@
 |---|---|---|---|
 | High | 3 | ターミナルエスケープシーケンス注入（preview/ファイル名/grep 行） | ✅ 対応済（2026-04-24） |
 | Medium | 3 | preview OOM、エディタ引数フラグ注入、`exec.CommandContext` 不使用 | ✅ 対応済（2026-04-25） |
-| Low | 3 | symlink、PATH 汚染、環境変数無制限継承 | 未対応 |
+| Low | 3 | symlink、PATH 汚染、環境変数無制限継承 | L-2/L-3 ✅ 対応済（2026-04-25）／L-1 Won't-fix |
 | Info | 4 | stdout サイズ未制限、`parseGrepItem` 境界、非推奨 API、未使用コード | 未対応 |
 
 依存関係・メモリモデルはクリーン（`govulncheck` / `osv-scanner` / `go test -race` すべて無指摘）。
-最大リスクは **TUI 特有のターミナルエスケープ注入**で、汎用ツールでは検出できない観点。High 3件は共通サニタイザ `internal/sanitize` の導入で解消。Medium 3件も 2026-04-25 時点で対応完了（preview サイズ上限 2MB、エディタ引数 `--` セパレータ + `./` 前置、`exec.CommandContext` 化 + デバウンスキャンセル）。
+最大リスクは **TUI 特有のターミナルエスケープ注入**で、汎用ツールでは検出できない観点。High 3件は共通サニタイザ `internal/sanitize` の導入で解消。Medium 3件も 2026-04-25 時点で対応完了（preview サイズ上限 2MB、エディタ引数 `--` セパレータ + `./` 前置、`exec.CommandContext` 化 + デバウンスキャンセル）。Low のうち L-2（PATH 汚染）/ L-3（env 無制限継承）も同日対応済。L-1（symlink）は脅威モデル評価の結果 Won't-fix。
 
 ---
 
@@ -127,23 +127,32 @@
 
 ### Low
 
-#### L-1: symlink 経由の任意ファイル参照
+#### L-1: symlink 経由の任意ファイル参照 ⚠️ Won't-fix（2026-04-25）
 
 - 該当箇所: `internal/preview/preview.go:25, 43, 65`
 - 内容: `fd --type f` は regular file のみなので symlink は一覧に出ないが、`rg --files` はデフォルトで symlink を追従しない反面 `--follow` 等で挙動が変わる。ユーザー自身の権限範囲内なので escalation はないが、`~/.ssh/id_rsa` などへのうっかり参照は観点として記録しておく。
 - 対策: `os.Lstat` で symlink 検知 → skip、あるいはパスが意図したベースディレクトリ以下か検証（Go 1.24+ なら `os.Root`）。
+- **判断**: Won't-fix。理由:
+  1. **Privilege escalation はゼロ**。ユーザー自身が読めるファイルしか到達できない（`/etc/shadow` 等は権限で弾かれる）。
+  2. **glimpse 固有の攻撃面ではない**。最も現実的なのは「未信頼 repo を clone してレビュー中に細工 symlink を選択 → preview に鍵が出る」だが、`cat README.md` でも同じ事が起こるため glimpse が新たなリスクを生んでいるわけではない。
+  3. **既存のデフォルト挙動で十分軽減されている**。`fd --type f` は symlink を出さず、`rg --files` も `--follow` 無しではフォローしない。
+  4. **ベース外参照を弾く（option 3: `os.Root`）案は UX を破壊**する。プロジェクト外のファイルや home 配下を fuzzy finder で見るのは正常ユースケース。
+  5. **`os.Lstat` で skip する案（option 2）も**、symlink を意図的に置いている開発者ワークフロー（`node_modules/.bin` 等）を壊す副作用がある。
+  - 将来 fd/rg のデフォルト挙動が変わる、あるいは `--follow` 相当を glimpse が独自に有効化する場合は再評価する。
 
-#### L-2: PATH 汚染対策なし
+#### L-2: PATH 汚染対策なし ✅ 対応済
 
 - 該当箇所: `internal/finder/finder.go:9, 12`, `internal/grep/grep.go:50`
 - 内容: `exec.Command("rg", ...)` / `("fd", ...)` で PATH 依存解決。カレント実行ディレクトリ直下に悪意ある `rg`/`fd` があると（Go 1.19+ は `.` を PATH から除外するので影響は小さいが）、PATH 上の順序次第では差し替え可能。
 - 対策: 起動時に `exec.LookPath` で絶対パス解決し、以降はそれを使う。任意では解決先が `/usr/bin` 等の想定ディレクトリ下かを検証。
+- 実装: `internal/grep/grep.go` / `internal/finder/finder.go` でパッケージレベル `var rgBinary = lookupBinary("rg")` / `fdBinary = lookupBinary("fd")` として `exec.LookPath` を起動時に一度だけ実行し、絶対パスで固定。バイナリが見つからない場合は空文字列となり、`Search` / `ListFiles` 側で明示エラーを返す。実行時の相対名解決を排除することで mid-session の PATH 差し替えに対する余地を消す。回帰テスト: `TestRgBinaryResolvedToAbsolutePath`（grep / finder 両方）、`TestFdBinaryResolvedToAbsolutePath`、`TestSearchReturnsErrorWhenBinaryMissing`、`TestListFilesReturnsErrorWhenBothBinariesMissing`。
 
-#### L-3: 子プロセスへの環境変数無制限継承
+#### L-3: 子プロセスへの環境変数無制限継承 ✅ 対応済
 
 - 該当箇所: 全 `exec.Command` 呼び出し
 - 内容: `cmd.Env` 未設定なので親プロセスの全環境変数（`GIT_SSH_COMMAND`, `LD_PRELOAD`, クレデンシャル系）が rg/fd/editor に流れる。
 - 対策: 必要なものだけホワイトリスト（`PATH`, `HOME`, `LANG`, `TERM`, `EDITOR` 依存分）。
+- 実装: `internal/grep/grep.go` / `internal/finder/finder.go` に `whitelistedEnv()` を追加し、`PATH` / `HOME` / `LANG` / `LC_ALL` / `LC_CTYPE` / `LC_MESSAGES` のみ通す。`Search` の rg、`ListFiles` の fd / rg 両方で `cmd.Env = whitelistedEnv()` を適用。スコープ判断: エディタ（`internal/ui/model.go` の `openEditorCmd`）は GUI 統合に必要な多数の env（`DISPLAY`, `XDG_*`, `WAYLAND_DISPLAY` 等）に依存するため対象外（option A）。攻撃面としては、rg/fd は単純な検索バイナリなので最小 env で十分機能する一方、エディタは UX を壊さずに env を絞るのが難しい。回帰テスト: `TestWhitelistedEnv`（grep / finder 両方）— `LD_PRELOAD` / `GIT_SSH_COMMAND` / `AWS_SECRET_ACCESS_KEY` が落ちることを `t.Setenv` で確認。
 
 ### Info
 
@@ -181,8 +190,11 @@
 2. ~~**M-1**: preview の上限導入。~~ → ✅ 2026-04-25 完了（`MaxPreviewSize = 2MB`、`IsTooLarge` + `LargeFileMessage`、境界テスト + 状態メッセージ golden で保護）。
 3. ~~**M-2**: エディタ `--` セパレータ追加。~~ → ✅ 2026-04-25 完了（`buildEditorArgs` に抽出し vim/nvim/emacs/vi/code 系/zed を対応、`./` 前置で二層防御、フラグ形状不変条件プロパティテスト付き）。
 4. ~~**M-3**: `exec.CommandContext` へ移行。~~ → ✅ 2026-04-25 完了（`grep.Search`/`finder.ListFiles` の ctx 化、`GrepModel.searchCancel` によるデバウンスキャンセル、integration test で実プロセス伝播確認）。
-5. Low/Info は余裕のあるタイミングで対応。
-6. **Fuzz 追加**: `FuzzForTerminal` は導入済。残る `FuzzParseGrepItem` / `FuzzReadFileRange` は未着手。
+5. ~~**L-2**: `exec.LookPath` で rg/fd を起動時に絶対パス解決。~~ → ✅ 2026-04-25 完了（grep / finder の両方でパッケージレベル var 化、バイナリ未検出時は明示エラー）。
+6. ~~**L-3**: rg/fd 子プロセスの env をホワイトリスト化。~~ → ✅ 2026-04-25 完了（`whitelistedEnv()` で `PATH`/`HOME`/`LANG`/`LC_*` のみ通す。エディタは UX 維持のため対象外）。
+7. **L-1**（symlink）は ⚠️ **Won't-fix**（2026-04-25 判定）。脅威モデル上、privilege escalation がなく `cat` と同等で glimpse 固有の攻撃面ではないため。詳細は L-1 セクション参照。
+8. **Info 系**は余裕のあるタイミングで対応。
+9. **Fuzz 追加**: `FuzzForTerminal` は導入済。残る `FuzzParseGrepItem` / `FuzzReadFileRange` は未着手。
 
 ---
 

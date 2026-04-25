@@ -3,9 +3,37 @@ package grep
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"os"
 	"os/exec"
 	"strings"
 )
+
+// rgBinary はパッケージ初期化時に LookPath で解決した rg の絶対パス。
+// 実行時に相対名 "rg" を PATH 解決すると PATH 汚染（別ディレクトリ優先や
+// mid-session での差し替え）の余地が残るため、起動時に一度だけ解決して固定する（L-2）。
+// インストールされていない環境では空文字列のままとし、Search 側で明示エラーを返す。
+var rgBinary = lookupBinary("rg")
+
+func lookupBinary(name string) string {
+	if p, err := exec.LookPath(name); err == nil {
+		return p
+	}
+	return ""
+}
+
+// whitelistedEnv は rg に渡す環境変数を PATH/HOME/LANG/LC_* のみに絞って返す（L-3）。
+// LD_PRELOAD・GIT_SSH_COMMAND・クレデンシャル系など危険な変数の継承を防ぐ。
+func whitelistedEnv() []string {
+	keys := []string{"PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE", "LC_MESSAGES"}
+	env := make([]string, 0, len(keys))
+	for _, k := range keys {
+		if v, ok := os.LookupEnv(k); ok {
+			env = append(env, k+"="+v)
+		}
+	}
+	return env
+}
 
 // Match はrgの検索結果から抽出した1行分のマッチ情報を表す。
 type Match struct {
@@ -50,7 +78,11 @@ type rgMatch struct {
 // ctx のキャンセル/タイムアウトは rg プロセスに伝播し、呼び出し側は
 // 古いデバウンスをキャンセルして stdout の溜め込みを防げる。
 func Search(ctx context.Context, pattern string) ([]Match, error) {
-	cmd := exec.CommandContext(ctx, "rg", "--json", pattern)
+	if rgBinary == "" {
+		return nil, errors.New("rg: executable not found in $PATH")
+	}
+	cmd := exec.CommandContext(ctx, rgBinary, "--json", pattern)
+	cmd.Env = whitelistedEnv()
 	out, err := cmd.Output()
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
