@@ -344,7 +344,8 @@ func parseGrepItem(item string) (string, int) {
 			continue // 数字の後が `:` でも文末でもない
 		}
 		line, err := strconv.Atoi(item[i+1 : j])
-		if err != nil {
+		if err != nil || line <= 0 {
+			// 行番号は 1-based。0 や負の値は parse 失敗扱い（fuzz 検出: ":00" 等）。
 			continue
 		}
 		return item[:i], line

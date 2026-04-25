@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -643,6 +644,9 @@ func TestParseGrepItem(t *testing.T) {
 		{name: "textに複数のコロン", input: "main.go:42:foo:bar:baz", wantFile: "main.go", wantLine: 42},
 		// text が空でも file:line: の形なら認識される。
 		{name: "text空", input: "main.go:7:", wantFile: "main.go", wantLine: 7},
+		// I-2 fuzz 検出: 行番号は 1-based。`:0:` や `:00` は parse 失敗扱い。
+		{name: "ファイル空+line0", input: ":00", wantFile: ":00", wantLine: 0},
+		{name: "line0は非マッチ", input: "main.go:0:hi", wantFile: "main.go:0:hi", wantLine: 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -651,4 +655,79 @@ func TestParseGrepItem(t *testing.T) {
 			assert.Equal(t, tt.wantLine, line)
 		})
 	}
+}
+
+// FuzzParseGrepItem は parseGrepItem の不変条件を fuzz で検証する。
+// 任意の文字列入力に対し:
+//   - panic しない
+//   - line >= 0（負の行番号は出ない）
+//   - file は input の prefix（あるいは input そのもの）
+//   - line > 0 のとき: input は file + ":" の後に digit列 + (":" or 文末) という構造を持つ
+func FuzzParseGrepItem(f *testing.F) {
+	// シード: 既存テストと、エッジケース
+	seeds := []string{
+		"main.go:10:func main()",
+		"main.go",
+		"main.go:abc:hi",
+		`C:\foo\bar.go:10:hello`,
+		"weird:name.txt:5:matched",
+		"main.go:42:foo:bar:baz",
+		"main.go:7:",
+		"",
+		":",
+		"::",
+		":::",
+		":1:",
+		"a:9999999999999999999999999:x", // overflow
+		"\x00:1:\x00",
+	}
+	for _, s := range seeds {
+		f.Add(s)
+	}
+
+	f.Fuzz(func(t *testing.T, input string) {
+		file, line := parseGrepItem(input)
+
+		if line < 0 {
+			t.Errorf("negative line %d for input %q", line, input)
+		}
+		if !strings.HasPrefix(input, file) {
+			t.Errorf("file %q is not a prefix of input %q", file, input)
+		}
+		if line == 0 {
+			// 解釈失敗ケースでは file == input を満たす実装。
+			if file != input {
+				t.Errorf("on line==0 expected file==input, got file=%q input=%q", file, input)
+			}
+			return
+		}
+		// line > 0 の reconstruction 検証:
+		// input[len(file)] == ':' であり、その直後から digit 列が始まり、
+		// digit 列を strconv.Atoi すると line と一致し、その直後は ':' か文末。
+		rest := input[len(file):]
+		if !strings.HasPrefix(rest, ":") {
+			t.Errorf("expected ':' after file, got %q (input=%q)", rest, input)
+			return
+		}
+		rest = rest[1:]
+		end := 0
+		for end < len(rest) && rest[end] >= '0' && rest[end] <= '9' {
+			end++
+		}
+		if end == 0 {
+			t.Errorf("expected digit run after ':' (input=%q)", input)
+			return
+		}
+		got, err := strconv.Atoi(rest[:end])
+		if err != nil {
+			t.Errorf("digit run failed to parse: %q (input=%q)", rest[:end], input)
+			return
+		}
+		if got != line {
+			t.Errorf("reconstructed line %d != returned line %d (input=%q)", got, line, input)
+		}
+		if end < len(rest) && rest[end] != ':' {
+			t.Errorf("expected ':' or EOS after digits, got %q (input=%q)", rest[end:], input)
+		}
+	})
 }

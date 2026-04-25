@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -242,4 +243,75 @@ func TestIsTooLargeNotFound(t *testing.T) {
 func TestMaxPreviewSizeIs2MB(t *testing.T) {
 	assert.Equal(t, int64(2*1024*1024), int64(MaxPreviewSize),
 		"MaxPreviewSize は 2MB であること（変更時はレポート/ドキュメントも更新）")
+}
+
+// FuzzReadFileRange はランダムなファイル内容と startLine/maxLines に対する不変条件を検証する。
+// プロパティ:
+//   - panic しない
+//   - 戻り値は valid UTF-8（sanitize 通過後の保証）
+//   - 戻り値に raw ESC / BEL / BiDi 制御バイトが含まれない
+//   - 戻り値の長さは入力ファイルサイズ + sanitize の visualize 拡張倍率（最大 ~7倍） 以内
+func FuzzReadFileRange(f *testing.F) {
+	type seed struct {
+		content   string
+		startLine int
+		maxLines  int
+	}
+	seeds := []seed{
+		{"L1\nL2\nL3\n", 1, 0},
+		{"", 1, 10},
+		{"single line", 1, 1},
+		{"\x00\x01\x02\x03", 1, 0},
+		{"\xff\xfe\xfd", 1, 0}, // 不正 UTF-8
+		{"line\x1b[31mred\x1b[0m", 1, 0},
+		{"\u202eRTL\n", 1, 1},
+		{strings.Repeat("a\n", 1000), 500, 100},
+		{"x", -100, -100},
+		{"x", 1<<30, 1 << 30}, // 巨大値
+	}
+	for _, s := range seeds {
+		f.Add(s.content, s.startLine, s.maxLines)
+	}
+
+	f.Fuzz(func(t *testing.T, content string, startLine, maxLines int) {
+		// 巨大な content による I/O 遅延は fuzz としては不要なので軽くキャップ。
+		// （正常系のロジック検証が目的で、巨大ファイル処理は M-1 / IsTooLarge の領分）。
+		if len(content) > 64*1024 {
+			content = content[:64*1024]
+		}
+		path := filepath.Join(t.TempDir(), "f.txt")
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+		got, err := ReadFileRange(path, startLine, maxLines)
+		if err != nil {
+			t.Errorf("unexpected error reading temp file: %v", err)
+			return
+		}
+		if !utf8.ValidString(got) {
+			t.Errorf("output is not valid UTF-8: %q", got)
+		}
+		if strings.ContainsRune(got, 0x1b) {
+			t.Errorf("raw ESC present in output: %q", got)
+		}
+		if strings.ContainsRune(got, 0x07) {
+			t.Errorf("raw BEL present in output: %q", got)
+		}
+		// BiDi 制御（U+202A〜U+202E, U+2066〜U+2069）は sanitize で可視化されるはず。
+		bidiRunes := []rune{
+			0x202A, 0x202B, 0x202C, 0x202D, 0x202E,
+			0x2066, 0x2067, 0x2068, 0x2069,
+		}
+		for _, r := range bidiRunes {
+			if strings.ContainsRune(got, r) {
+				t.Errorf("BiDi control U+%04X present in output", r)
+			}
+		}
+		// サイズ上界: sanitize は 1 バイト → 最大 6 文字 ('\\xNN') 程度に膨らむ。
+		// 安全側で 8倍 + 余白 を上界にする。
+		if int64(len(got)) > int64(len(content))*8+1024 {
+			t.Errorf("output size %d exceeds expected upper bound for content size %d",
+				len(got), len(content))
+		}
+	})
 }
