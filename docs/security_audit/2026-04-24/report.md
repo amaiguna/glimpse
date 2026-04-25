@@ -12,12 +12,12 @@
 | 優先度 | 件数 | 概要 | ステータス |
 |---|---|---|---|
 | High | 3 | ターミナルエスケープシーケンス注入（preview/ファイル名/grep 行） | ✅ 対応済（2026-04-24） |
-| Medium | 3 | preview OOM、エディタ引数フラグ注入、`exec.CommandContext` 不使用 | 未対応 |
+| Medium | 3 | preview OOM、エディタ引数フラグ注入、`exec.CommandContext` 不使用 | ✅ 対応済（2026-04-25） |
 | Low | 3 | symlink、PATH 汚染、環境変数無制限継承 | 未対応 |
 | Info | 4 | stdout サイズ未制限、`parseGrepItem` 境界、非推奨 API、未使用コード | 未対応 |
 
 依存関係・メモリモデルはクリーン（`govulncheck` / `osv-scanner` / `go test -race` すべて無指摘）。
-最大リスクは **TUI 特有のターミナルエスケープ注入**で、汎用ツールでは検出できない観点。High 3件は共通サニタイザ `internal/sanitize` の導入で解消した。
+最大リスクは **TUI 特有のターミナルエスケープ注入**で、汎用ツールでは検出できない観点。High 3件は共通サニタイザ `internal/sanitize` の導入で解消。Medium 3件も 2026-04-25 時点で対応完了（preview サイズ上限 2MB、エディタ引数 `--` セパレータ + `./` 前置、`exec.CommandContext` 化 + デバウンスキャンセル）。
 
 ---
 
@@ -99,23 +99,31 @@
 
 ### Medium
 
-#### M-1: preview の無制限メモリ読み込み (OOM)
+#### M-1: preview の無制限メモリ読み込み (OOM) ✅ 対応済
 
 - 該当箇所: `internal/preview/preview.go:43, 65`
 - 内容: `os.ReadFile` はファイル全体を一度にメモリへ読み込む。`ReadFileRange` も全読み込み後に行スライスで切る実装のため、サイズ上限がない。GB 級のログファイルや動画をカーソルで選択しただけで即 OOM。
 - 対策: 先頭 Nバイト（例: 1〜4MB）で打ち切る、あるいは `bufio.Scanner` を使った行単位 streaming 読み。サイズ上限は `binarySniffSize` と整合を取った定数で管理するのが望ましい。
+- 実装: `internal/preview/preview.go` に `MaxPreviewSize = 2 * 1024 * 1024` と `LargeFileMessage` / `IsTooLarge(path)` を追加。`internal/ui/model.go` の `previewCmd` で `IsTooLarge` を `IsBinary` より先にチェックし、超過時は `LargeFileMessage` を返す（stat のみで判定できるため安価）。2MB の根拠は「通常ソースファイルは数KB〜100KB 台に収まり、この閾値を超えるのは minified bundle / `package-lock.json` / generated 系が中心 = 人間が読むテキストではない」。バイナリは既存の `IsBinary`（NUL sniff）で別経路。回帰テスト: `TestIsTooLarge`（境界条件 table-driven）、`TestMaxPreviewSizeIs2MB`（定数意図ロック）、`TestPreviewLargeFile{In,InGrep}Mode`、`TestPreviewExactlyMaxSizeIsAllowed`。golden: `preview_binary_message`, `preview_large_file_message`（状態メッセージ描画レイアウト pin、BinaryFileMessage 既存ギャップも同時に埋めた）。
 
-#### M-2: エディタ起動時の `--` セパレータ欠如
+#### M-2: エディタ起動時の `--` セパレータ欠如 ✅ 対応済
 
 - 該当箇所: `internal/ui/model.go:286-287`
 - 内容: `args = append(args, fmt.Sprintf("+%d", line)); args = append(args, file)` でエディタに引数を渡しているが `--` なし。細工ファイル名 `-c:set shell=...` のようなファイルを Enter で開くと Vim/Neovim が引数扱いして**任意コマンド実行**に繋がる。
 - 対策: `args = append(args, "--", file)` を追加。エディタ別に `--` サポート差があるので、`vim`/`nvim`/`emacs`/`code` など主要エディタの互換を確認する。
+- 実装: `internal/ui/editor.go` に `buildEditorArgs(editor, file, line)` を抽出し、エディタ別にディスパッチ:
+  - `vim` / `nvim` / `emacs` / `vi` / 未知: `+LINE -- FILE`（`--` で option 終端）
+  - `code` / `code-insiders` / `codium` / `vscodium`: `-g FILE:LINE`（`-g` が次トークンを値として消費する性質に依存）
+  - `zed`: `-- FILE:LINE`（positional）
 
-#### M-3: `exec.CommandContext` 不使用
+  二層防御として、`sanitizeEditorFilePath` がファイル名先頭の `-` `+` を検出した場合は `./` を前置し、パーサーの差異に依らずフラグと lexically に区別できる形にする。回帰テスト: 23 ケースの table-driven `TestBuildEditorArgs` + `TestBuildEditorArgsNoFlagShaped`（ユーザー由来トークンが argv にフラグ形状で残らない不変条件プロパティ）。
+
+#### M-3: `exec.CommandContext` 不使用 ✅ 対応済
 
 - 該当箇所: `internal/grep/grep.go:50`, `internal/finder/finder.go:9, 12`
 - 内容: `exec.Command` のみで context を渡していない。デバウンス中にキーストローク毎に rg が立ち上がるが、古いプロセスはキャンセルできず stdout がメモリに溜まる。暴走 rg を殺せない。
 - 対策: `context.WithTimeout` + `exec.CommandContext`。クエリ変更時に前回 context をキャンセルできる構造にする。
+- 実装: `grep.Search(ctx, pattern)` / `finder.ListFiles(ctx)` にシグネチャ変更し `exec.CommandContext` 化。`ctx.Err()` を `*exec.ExitError` より優先して返し、rg の exit code 1（マッチなし）とキャンセルを区別する。`GrepModel` に `searchCancel context.CancelFunc` フィールドを追加し、`handleDebounceTick` 発火時に前回 cancel → 新 ctx（10s timeout）作成、`Reset` 時も cancel して進行中の rg を回収。`runGrepCmd` は `context.Canceled` を握りつぶし（新検索で上書き中のため UI に「killed」エラーを出さない）、`DeadlineExceeded` は `GrepErrorMsg` として表示。`loadFilesCmd` は一回限りなので 30s timeout + `defer cancel()`。回帰テスト: `TestGrepCancelsPreviousSearchOnNewDebounce` / `TestGrepCancelsSearchOnReset`（spy cancel 注入で状態遷移検証）。integration テスト（`//go:build integration`）: `TestSearchContextCanceled` / `TestSearchContextDeadlineExceeded` / `TestSearchNormalContext`、`TestListFilesContextCanceled` / `TestListFilesNormalContext`（実 rg/fd プロセスへの伝播確認）。
 
 ### Low
 
@@ -170,11 +178,11 @@
 ## 推奨対応順序（ROI 順）
 
 1. ~~**H-1/H-2/H-3**: 共通サニタイザ導入 + 3 経路に適用。1ファイル追加 + 呼出3箇所で完結。~~ → ✅ 2026-04-24 完了（`internal/sanitize` 新設、preview/finder/grep の 3 箇所に適用、`FuzzForTerminal` 含む TDD で実装）。
-2. **M-1**: preview の上限導入（既存 `binarySniffSize` 周辺に新定数、`ReadFile`/`ReadFileRange` 書き換え）。
-3. **M-2**: エディタ `--` セパレータ追加（1行修正）。
-4. **M-3**: `exec.CommandContext` へ移行（`grep.Search` / `finder.ListFiles` のシグネチャ拡張が必要）。
+2. ~~**M-1**: preview の上限導入。~~ → ✅ 2026-04-25 完了（`MaxPreviewSize = 2MB`、`IsTooLarge` + `LargeFileMessage`、境界テスト + 状態メッセージ golden で保護）。
+3. ~~**M-2**: エディタ `--` セパレータ追加。~~ → ✅ 2026-04-25 完了（`buildEditorArgs` に抽出し vim/nvim/emacs/vi/code 系/zed を対応、`./` 前置で二層防御、フラグ形状不変条件プロパティテスト付き）。
+4. ~~**M-3**: `exec.CommandContext` へ移行。~~ → ✅ 2026-04-25 完了（`grep.Search`/`finder.ListFiles` の ctx 化、`GrepModel.searchCancel` によるデバウンスキャンセル、integration test で実プロセス伝播確認）。
 5. Low/Info は余裕のあるタイミングで対応。
-6. **Fuzz 追加**: `FuzzForTerminal` は導入済。残る `FuzzParseGrepItem` / `FuzzReadFileRange` は M-1 の上限導入後に実施。
+6. **Fuzz 追加**: `FuzzForTerminal` は導入済。残る `FuzzParseGrepItem` / `FuzzReadFileRange` は未着手。
 
 ---
 

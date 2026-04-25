@@ -255,6 +255,9 @@ func (m *Model) previewCmd() tea.Cmd {
 	m.previewPath = filePath
 	m.previewStartLine = startLine
 	return func() tea.Msg {
+		if tooLarge, err := preview.IsTooLarge(filePath); err == nil && tooLarge {
+			return PreviewLoadedMsg{Content: preview.LargeFileMessage, Path: filePath}
+		}
 		if binary, err := preview.IsBinary(filePath); err == nil && binary {
 			return PreviewLoadedMsg{Content: preview.BinaryFileMessage, Path: filePath}
 		}
@@ -274,16 +277,14 @@ func (m *Model) previewCmd() tea.Cmd {
 }
 
 // openEditorCmd は $EDITOR でファイルを開くコマンドを返す。
+// 引数組み立ては buildEditorArgs に委譲し、エディタ別の形式差と
+// 悪意あるファイル名（`-` `+` 始まり）によるフラグ注入を吸収する。
 func openEditorCmd(file string, line int) tea.Cmd {
 	editor := os.Getenv("EDITOR")
 	if editor == "" {
 		editor = "vim"
 	}
-	var args []string
-	if line > 0 {
-		args = append(args, fmt.Sprintf("+%d", line))
-	}
-	args = append(args, file)
+	args := buildEditorArgs(editor, file, line)
 	c := exec.Command(editor, args...)
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		return EditorFinishedMsg{Err: err}

@@ -16,8 +16,27 @@ import (
 // binarySniffSize はバイナリ判定のために先頭から読み込むバイト数。
 const binarySniffSize = 8192
 
+// MaxPreviewSize はプレビュー対象として許容する最大ファイルサイズ（バイト）。
+// これを超えるファイルは LargeFileMessage を返してプレビューを拒否する。
+// 通常のソースファイルは数KB〜100KB台に収まり、minified bundle や generated 系で
+// この閾値を超えるのが典型ケース。OOM 防止用。
+const MaxPreviewSize = 2 * 1024 * 1024
+
 // BinaryFileMessage はバイナリファイルが選択された際にプレビュー欄に表示する文字列。
 const BinaryFileMessage = "バイナリファイルはプレビューできません"
+
+// LargeFileMessage はサイズ超過ファイルが選択された際にプレビュー欄に表示する文字列。
+const LargeFileMessage = "ファイルサイズが大きすぎるためプレビューできません"
+
+// IsTooLarge はファイルサイズが MaxPreviewSize を超えるかどうかを判定する。
+// 超える場合のみ true を返す（境界ちょうどは false）。
+func IsTooLarge(path string) (bool, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return false, err
+	}
+	return info.Size() > MaxPreviewSize, nil
+}
 
 // IsBinary はファイルがバイナリかどうかを判定する。
 // 先頭 binarySniffSize バイトに NUL バイト (0x00) が含まれていれば true を返す

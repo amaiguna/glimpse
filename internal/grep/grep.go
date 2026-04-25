@@ -1,6 +1,7 @@
 package grep
 
 import (
+	"context"
 	"encoding/json"
 	"os/exec"
 	"strings"
@@ -46,10 +47,15 @@ type rgMatch struct {
 
 // Search は rg --json を実行し、結果をパースして返す。
 // マッチなし（終了コード1）の場合は nil, nil を返す。
-func Search(pattern string) ([]Match, error) {
-	cmd := exec.Command("rg", "--json", pattern)
+// ctx のキャンセル/タイムアウトは rg プロセスに伝播し、呼び出し側は
+// 古いデバウンスをキャンセルして stdout の溜め込みを防げる。
+func Search(ctx context.Context, pattern string) ([]Match, error) {
+	cmd := exec.CommandContext(ctx, "rg", "--json", pattern)
 	out, err := cmd.Output()
 	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
 		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
 			return nil, nil
 		}

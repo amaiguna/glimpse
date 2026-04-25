@@ -1,17 +1,27 @@
 package finder
 
 import (
+	"context"
 	"os/exec"
 	"strings"
 )
 
-func ListFiles() ([]string, error) {
-	cmd := exec.Command("fd", "--type", "f")
+// ListFiles は fd --type f でファイル一覧を取得する。fd が無ければ rg --files にフォールバック。
+// ctx のキャンセル/タイムアウトは fd/rg プロセスに伝播する（M-3）。
+// ctx 由来のエラーは fd 失敗 → rg 再試行で上書きされないよう優先して返す。
+func ListFiles(ctx context.Context) ([]string, error) {
+	cmd := exec.CommandContext(ctx, "fd", "--type", "f")
 	out, err := cmd.Output()
 	if err != nil {
-		cmd = exec.Command("rg", "--files")
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
+		cmd = exec.CommandContext(ctx, "rg", "--files")
 		out, err = cmd.Output()
 		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, ctxErr
+			}
 			return nil, err
 		}
 	}

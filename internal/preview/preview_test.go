@@ -210,3 +210,36 @@ func TestIsBinaryNotFound(t *testing.T) {
 	_, err := IsBinary("/nonexistent/file.bin")
 	assert.Error(t, err)
 }
+
+func TestIsTooLarge(t *testing.T) {
+	tests := []struct {
+		name string
+		size int
+		want bool
+	}{
+		{"小さいファイル (1KB)", 1024, false},
+		{"上限直前 (MaxPreviewSize-1)", MaxPreviewSize - 1, false},
+		{"上限ちょうど (MaxPreviewSize)", MaxPreviewSize, false},
+		{"上限超え (MaxPreviewSize+1)", MaxPreviewSize + 1, true},
+		{"空ファイル", 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "f.txt")
+			require.NoError(t, os.WriteFile(path, make([]byte, tt.size), 0644))
+			got, err := IsTooLarge(path)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestIsTooLargeNotFound(t *testing.T) {
+	_, err := IsTooLarge("/nonexistent/file.txt")
+	assert.Error(t, err)
+}
+
+func TestMaxPreviewSizeIs2MB(t *testing.T) {
+	assert.Equal(t, int64(2*1024*1024), int64(MaxPreviewSize),
+		"MaxPreviewSize は 2MB であること（変更時はレポート/ドキュメントも更新）")
+}

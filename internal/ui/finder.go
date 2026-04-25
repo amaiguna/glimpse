@@ -1,7 +1,9 @@
 package ui
 
 import (
+	"context"
 	"strings"
+	"time"
 
 	"github.com/amaiguna/glimpse-tui/internal/finder"
 	"github.com/amaiguna/glimpse-tui/internal/sanitize"
@@ -9,6 +11,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
+
+// finderListTimeout はファイル列挙（fd / rg --files）に許す最大時間。
+// 大規模リポでも十分な余裕を取りつつ、暴走プロセスは kill されるようにする（M-3）。
+const finderListTimeout = 30 * time.Second
 
 // FinderModel はファイルファインダーモードのペイン。
 // fd/rg --files で取得したファイル一覧をファジーフィルタリングする。
@@ -37,9 +43,13 @@ func NewFinderModel() *FinderModel {
 }
 
 // loadFilesCmd はファイル列挙を非同期で実行するコマンドを返す。
+// finderListTimeout のタイムアウトを設定し、fd/rg プロセスが暴走した場合でも
+// 一定時間で kill されるようにする（M-3）。
 func loadFilesCmd() tea.Cmd {
 	return func() tea.Msg {
-		items, err := finder.ListFiles()
+		ctx, cancel := context.WithTimeout(context.Background(), finderListTimeout)
+		defer cancel()
+		items, err := finder.ListFiles(ctx)
 		if err != nil {
 			return FilesErrorMsg{Err: err}
 		}

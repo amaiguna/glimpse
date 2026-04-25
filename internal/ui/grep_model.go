@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -28,6 +30,9 @@ type GrepModel struct {
 	err              error
 	debounceTag      int
 	previewStartLine int // PreviewRange が最後に返した開始行（DecoratePreview で使用）
+	// searchCancel は進行中の rg 検索を途中で kill するための CancelFunc。
+	// 新しい debounce 発火時や Reset 時に呼び出して古いプロセスを回収する（M-3）。
+	searchCancel context.CancelFunc
 }
 
 // NewGrepModel は GrepModel を初期化して返す。
@@ -41,10 +46,20 @@ func NewGrepModel() *GrepModel {
 	}
 }
 
+// grepSearchTimeout は 1 回の grep 検索に許す最大時間。
+// これを超えると rg プロセスが kill され GrepErrorMsg（DeadlineExceeded）が返る。
+const grepSearchTimeout = 10 * time.Second
+
 // runGrepCmd は rg 検索を非同期で実行するコマンドを返す。
-func runGrepCmd(pattern string) tea.Cmd {
+// ctx のキャンセルで古い rg プロセスを kill し stdout の溜め込みを防ぐ（M-3）。
+// キャンセル（context.Canceled）は新しい検索で上書き中なので UI に伝えず無視する。
+// DeadlineExceeded は明示的なタイムアウトなのでエラー表示する。
+func runGrepCmd(ctx context.Context, pattern string) tea.Cmd {
 	return func() tea.Msg {
-		matches, err := grep.Search(pattern)
+		matches, err := grep.Search(ctx, pattern)
+		if errors.Is(err, context.Canceled) {
+			return nil
+		}
 		if err != nil {
 			return GrepErrorMsg{Err: err}
 		}
@@ -105,12 +120,19 @@ func (g *GrepModel) handleDebounceTick(msg debounceTickMsg) (Pane, tea.Cmd) {
 	if msg.tag != g.debounceTag {
 		return g, nil
 	}
+	// 前回の検索が残っていれば cancel（rg プロセス kill + stdout 溜め込み回避）。
+	if g.searchCancel != nil {
+		g.searchCancel()
+	}
 	if g.textInput.Value() == "" {
+		g.searchCancel = nil
 		g.items = nil
 		return g, nil
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), grepSearchTimeout)
+	g.searchCancel = cancel
 	g.loading = true
-	return g, runGrepCmd(g.textInput.Value())
+	return g, runGrepCmd(ctx, g.textInput.Value())
 }
 
 // clampOffset はカーソルが表示範囲内に収まるよう offset を調整する。
@@ -264,7 +286,12 @@ func (g *GrepModel) OpenTarget() (string, int) {
 }
 
 // Reset はモード切替時にペインの状態をリセットする。
+// 進行中の rg 検索があれば cancel してプロセスを回収する（M-3）。
 func (g *GrepModel) Reset() {
+	if g.searchCancel != nil {
+		g.searchCancel()
+		g.searchCancel = nil
+	}
 	g.textInput.SetValue("")
 	g.cursor = 0
 	g.offset = 0

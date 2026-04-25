@@ -270,6 +270,58 @@ func TestPreviewBinaryFileInGrepMode(t *testing.T) {
 	assert.Equal(t, preview.BinaryFileMessage, got.previewContent)
 }
 
+// M-1 回帰: MaxPreviewSize を超えるテキストファイルは LargeFileMessage を返す。
+func TestPreviewLargeFileInFinderMode(t *testing.T) {
+	dir := t.TempDir()
+	bigFile := filepath.Join(dir, "huge.txt")
+	require.NoError(t, os.WriteFile(bigFile, make([]byte, preview.MaxPreviewSize+1), 0644))
+
+	m := NewModel()
+	m.finderPane.items = []string{bigFile}
+	m.finderPane.allFiles = []string{bigFile}
+	m.finderPane.loading = false
+
+	cmd := m.previewCmd()
+	got := drainCmds(t, m, cmd)
+
+	assert.Equal(t, preview.LargeFileMessage, got.previewContent)
+}
+
+func TestPreviewLargeFileInGrepMode(t *testing.T) {
+	dir := t.TempDir()
+	bigFile := filepath.Join(dir, "huge.log")
+	require.NoError(t, os.WriteFile(bigFile, make([]byte, preview.MaxPreviewSize+1), 0644))
+
+	m := NewModel()
+	m.mode = ModeGrep
+	m.grepPane.items = []string{bigFile + ":1:match"}
+	cmd := m.previewCmd()
+	got := drainCmds(t, m, cmd)
+
+	assert.Equal(t, preview.LargeFileMessage, got.previewContent)
+}
+
+// 上限ちょうどはまだプレビュー対象（境界条件）。
+func TestPreviewExactlyMaxSizeIsAllowed(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "edge.txt")
+	content := make([]byte, preview.MaxPreviewSize)
+	for i := range content {
+		content[i] = 'a'
+	}
+	require.NoError(t, os.WriteFile(file, content, 0644))
+
+	m := NewModel()
+	m.finderPane.items = []string{file}
+	m.finderPane.allFiles = []string{file}
+	m.finderPane.loading = false
+
+	cmd := m.previewCmd()
+	got := drainCmds(t, m, cmd)
+
+	assert.NotEqual(t, preview.LargeFileMessage, got.previewContent)
+}
+
 func TestPreviewInGrepMode(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "main.go")

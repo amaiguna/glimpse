@@ -169,6 +169,33 @@ func TestGrepRawPathsForOperations(t *testing.T) {
 	assert.Equal(t, 42, gotLine)
 }
 
+// M-3 回帰: 新しい debounceTick が発火したら前回の検索 context を cancel して
+// 古い rg プロセスを kill できること（stdout 溜め込み防止）。
+// Reset でも cancel が呼ばれる（モード切替時に進行中の rg を掃除する）。
+func TestGrepCancelsPreviousSearchOnNewDebounce(t *testing.T) {
+	g := NewGrepModel()
+	g.textInput.SetValue("foo")
+	g.debounceTag = 1
+
+	called := 0
+	g.searchCancel = func() { called++ }
+
+	_, cmd := g.Update(debounceTickMsg{tag: 1})
+	assert.Equal(t, 1, called, "新規 debounce で前回 cancel が呼ばれる")
+	assert.NotNil(t, cmd)
+	assert.NotNil(t, g.searchCancel, "新しい cancel がセットされている")
+}
+
+func TestGrepCancelsSearchOnReset(t *testing.T) {
+	g := NewGrepModel()
+	called := false
+	g.searchCancel = func() { called = true }
+
+	g.Reset()
+	assert.True(t, called, "Reset 時に進行中の検索は cancel される")
+	assert.Nil(t, g.searchCancel)
+}
+
 func TestGrepReset(t *testing.T) {
 	g := NewGrepModel()
 	g.textInput.SetValue("foo")

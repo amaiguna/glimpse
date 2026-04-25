@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/amaiguna/glimpse-tui/internal/preview"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/assert"
@@ -109,6 +110,19 @@ func TestGoldenPreviewLong(t *testing.T) {
 	}
 	m := setupModel([]string{"long.txt"}, 80, 24, strings.Join(lines, "\n"))
 	goldenTest(t, "preview_long", m.View())
+}
+
+// preview ペインに短い状態メッセージ（Binary / LargeFile）を表示したときの
+// レイアウトを pin する。IsBinary / IsTooLarge 由来の固定メッセージ描画が
+// リファクタで壊れないことを保証する。
+func TestGoldenPreviewBinaryMessage(t *testing.T) {
+	m := setupModel([]string{"app.bin"}, 80, 24, preview.BinaryFileMessage)
+	goldenTest(t, "preview_binary_message", m.View())
+}
+
+func TestGoldenPreviewLargeFileMessage(t *testing.T) {
+	m := setupModel([]string{"huge.log"}, 80, 24, preview.LargeFileMessage)
+	goldenTest(t, "preview_large_file_message", m.View())
 }
 
 func TestGoldenWindowSmall(t *testing.T) {
