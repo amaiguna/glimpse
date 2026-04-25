@@ -4,10 +4,54 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
 )
+
+// MaxCmdOutputSize は rg の stdout を読み込むサイズ上限（I-1）。
+// 巨大リポでマッチ数が爆発した場合の OOM を防ぐ。50MB あれば
+// 数十万行〜数百万行のマッチを保持でき、UI で扱える上限としても十分。
+const MaxCmdOutputSize = 50 * 1024 * 1024
+
+// ErrOutputTooLarge は rg の stdout が MaxCmdOutputSize を超えた場合に返るエラー。
+var ErrOutputTooLarge = errors.New("rg: command output exceeds size limit")
+
+// readLimited は r から最大 max バイトまで読み込んで返す。
+// max を 1 バイトでも超える入力は ErrOutputTooLarge を返す（黙ってトリミングしない）。
+func readLimited(r io.Reader, max int64) ([]byte, error) {
+	out, err := io.ReadAll(io.LimitReader(r, max+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(out)) > max {
+		return nil, ErrOutputTooLarge
+	}
+	return out, nil
+}
+
+// runWithLimit は cmd を Start → readLimited → Wait の順で実行し、
+// stdout が max を超えた時点で ErrOutputTooLarge を返す。
+// 超過時は残り stdout を破棄し、子プロセスは ctx キャンセル/SIGPIPE 経由で終了する。
+func runWithLimit(cmd *exec.Cmd, max int64) ([]byte, error) {
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	out, readErr := readLimited(stdout, max)
+	if errors.Is(readErr, ErrOutputTooLarge) {
+		_, _ = io.Copy(io.Discard, stdout)
+	}
+	waitErr := cmd.Wait()
+	if readErr != nil {
+		return nil, readErr
+	}
+	return out, waitErr
+}
 
 // rgBinary はパッケージ初期化時に LookPath で解決した rg の絶対パス。
 // 実行時に相対名 "rg" を PATH 解決すると PATH 汚染（別ディレクトリ優先や
@@ -77,14 +121,19 @@ type rgMatch struct {
 // マッチなし（終了コード1）の場合は nil, nil を返す。
 // ctx のキャンセル/タイムアウトは rg プロセスに伝播し、呼び出し側は
 // 古いデバウンスをキャンセルして stdout の溜め込みを防げる。
+// stdout は MaxCmdOutputSize で打ち切られ、超過時は ErrOutputTooLarge を返す（I-1）。
 func Search(ctx context.Context, pattern string) ([]Match, error) {
 	if rgBinary == "" {
 		return nil, errors.New("rg: executable not found in $PATH")
 	}
 	cmd := exec.CommandContext(ctx, rgBinary, "--json", pattern)
 	cmd.Env = whitelistedEnv()
-	out, err := cmd.Output()
+
+	out, err := runWithLimit(cmd, MaxCmdOutputSize)
 	if err != nil {
+		if errors.Is(err, ErrOutputTooLarge) {
+			return nil, err
+		}
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, ctxErr
 		}

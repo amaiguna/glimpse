@@ -2,9 +2,11 @@ package grep
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/iotest"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -88,6 +90,49 @@ func TestParseRgJSON(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+// I-1 回帰: readLimited は max バイトまで読み、超過時は ErrOutputTooLarge を返す。
+// rg --files / rg --json の出力が巨大な場合に OOM 化させない安全網。
+func TestReadLimited(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		max     int64
+		wantOut string
+		wantErr error
+	}{
+		{name: "empty input", input: "", max: 10, wantOut: ""},
+		{name: "within limit", input: "hello", max: 10, wantOut: "hello"},
+		{name: "exactly at limit", input: "0123456789", max: 10, wantOut: "0123456789"},
+		{name: "one byte over", input: "0123456789X", max: 10, wantErr: ErrOutputTooLarge},
+		{name: "much larger", input: strings.Repeat("a", 10_000), max: 100, wantErr: ErrOutputTooLarge},
+		{name: "zero limit empty input", input: "", max: 0, wantOut: ""},
+		{name: "zero limit nonempty", input: "x", max: 0, wantErr: ErrOutputTooLarge},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := readLimited(strings.NewReader(tt.input), tt.max)
+			if tt.wantErr != nil {
+				require.Error(t, err)
+				assert.True(t, errors.Is(err, tt.wantErr), "expected %v, got %v", tt.wantErr, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantOut, string(got))
+		})
+	}
+}
+
+// readLimited は Reader からのエラーをそのまま伝搬する（context cancel など）。
+func TestReadLimitedPropagatesReaderError(t *testing.T) {
+	sentinel := errors.New("read failed")
+	r := iotest.ErrReader(sentinel)
+	_, err := readLimited(r, 1024)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, sentinel) || strings.Contains(err.Error(), sentinel.Error()),
+		"unexpected error: %v", err)
 }
 
 // L-2 回帰: rg バイナリは起動時に LookPath で絶対パス解決されていること。

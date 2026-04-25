@@ -137,7 +137,7 @@ func nextMsg(data []byte, pos *int) tea.Msg {
 			y = int(data[*pos+1]) % 60
 			*pos += 2
 		}
-		return tea.MouseMsg{X: x, Y: y, Type: tea.MouseLeft}
+		return tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft}
 
 	case 7: // 極小リサイズ（エッジケース）
 		w, h := 1, 1

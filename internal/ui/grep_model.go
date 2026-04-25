@@ -323,15 +323,31 @@ func formatGrepMatches(matches []grep.Match) []string {
 	return items
 }
 
-// parseGrepItem は "file:line:text" 形式の文字列からファイルパスと行番号を抽出する。
+// parseGrepItem は "file:line:text" 形式の文字列からファイルパスと行番号を抽出する（I-2）。
+// 「`:` の直後が `\d+` で、その後が `:` または文末」というパターンを左から走査するため、
+// ファイルパス側に `:` を含む（Windows `C:\foo:10:hit` や `weird:name.txt:5:hit`）ケース、
+// および text 側に `:` を含む（`main.go:42:foo:bar`）ケース両方に正しく動作する。
+// 形式不一致や行番号非数値の場合は (item, 0) を返す。
 func parseGrepItem(item string) (string, int) {
-	parts := strings.SplitN(item, ":", 3)
-	if len(parts) < 2 {
-		return item, 0
+	for i := 0; i < len(item); i++ {
+		if item[i] != ':' {
+			continue
+		}
+		j := i + 1
+		for j < len(item) && item[j] >= '0' && item[j] <= '9' {
+			j++
+		}
+		if j == i+1 {
+			continue // `:` 直後が数字でない
+		}
+		if j < len(item) && item[j] != ':' {
+			continue // 数字の後が `:` でも文末でもない
+		}
+		line, err := strconv.Atoi(item[i+1 : j])
+		if err != nil {
+			continue
+		}
+		return item[:i], line
 	}
-	line, err := strconv.Atoi(parts[1])
-	if err != nil {
-		return item, 0
-	}
-	return parts[0], line
+	return item, 0
 }

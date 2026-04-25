@@ -636,6 +636,13 @@ func TestParseGrepItem(t *testing.T) {
 		{name: "正常なgrep形式", input: "main.go:10:func main()", wantFile: "main.go", wantLine: 10},
 		{name: "コロンなしの文字列", input: "main.go", wantFile: "main.go", wantLine: 0},
 		{name: "行番号が非数値", input: "main.go:abc:func main()", wantFile: "main.go:abc:func main()", wantLine: 0},
+		// I-2: 右側 (line:text) を rsplit で取り出すので、ファイルパスに `:` が含まれていてもよい。
+		{name: "Windowsパス", input: `C:\foo\bar.go:10:hello`, wantFile: `C:\foo\bar.go`, wantLine: 10},
+		{name: "ファイル名にコロンを含む", input: "weird:name.txt:5:matched", wantFile: "weird:name.txt", wantLine: 5},
+		// text 部分にコロンがあっても影響しない（line の直後の最初の `:` で区切られる）。
+		{name: "textに複数のコロン", input: "main.go:42:foo:bar:baz", wantFile: "main.go", wantLine: 42},
+		// text が空でも file:line: の形なら認識される。
+		{name: "text空", input: "main.go:7:", wantFile: "main.go", wantLine: 7},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

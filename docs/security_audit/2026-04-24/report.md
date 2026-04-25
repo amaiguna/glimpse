@@ -14,10 +14,10 @@
 | High | 3 | ターミナルエスケープシーケンス注入（preview/ファイル名/grep 行） | ✅ 対応済（2026-04-24） |
 | Medium | 3 | preview OOM、エディタ引数フラグ注入、`exec.CommandContext` 不使用 | ✅ 対応済（2026-04-25） |
 | Low | 3 | symlink、PATH 汚染、環境変数無制限継承 | L-2/L-3 ✅ 対応済（2026-04-25）／L-1 Won't-fix |
-| Info | 4 | stdout サイズ未制限、`parseGrepItem` 境界、非推奨 API、未使用コード | 未対応 |
+| Info | 4 | stdout サイズ未制限、`parseGrepItem` 境界、非推奨 API、未使用コード | ✅ 対応済（2026-04-25） |
 
 依存関係・メモリモデルはクリーン（`govulncheck` / `osv-scanner` / `go test -race` すべて無指摘）。
-最大リスクは **TUI 特有のターミナルエスケープ注入**で、汎用ツールでは検出できない観点。High 3件は共通サニタイザ `internal/sanitize` の導入で解消。Medium 3件も 2026-04-25 時点で対応完了（preview サイズ上限 2MB、エディタ引数 `--` セパレータ + `./` 前置、`exec.CommandContext` 化 + デバウンスキャンセル）。Low のうち L-2（PATH 汚染）/ L-3（env 無制限継承）も同日対応済。L-1（symlink）は脅威モデル評価の結果 Won't-fix。
+最大リスクは **TUI 特有のターミナルエスケープ注入**で、汎用ツールでは検出できない観点。High 3件は共通サニタイザ `internal/sanitize` の導入で解消。Medium 3件も 2026-04-25 時点で対応完了（preview サイズ上限 2MB、エディタ引数 `--` セパレータ + `./` 前置、`exec.CommandContext` 化 + デバウンスキャンセル）。Low のうち L-2（PATH 汚染）/ L-3（env 無制限継承）も同日対応済。L-1（symlink）は脅威モデル評価の結果 Won't-fix。Info 4件（stdout サイズ上限、`parseGrepItem` rsplit 化、`tea.MouseLeft` 非推奨 API 解消、未使用コード削除）も同日対応済で、`staticcheck` は無指摘。
 
 ---
 
@@ -156,12 +156,28 @@
 
 ### Info
 
-| ID | 該当箇所 | 内容 |
-|---|---|---|
-| I-1 | `internal/finder/finder.go`, `internal/grep/grep.go` | `cmd.Output()` が stdout 全体をメモリ化。巨大リポの `rg --files` は数百MB可能。`StdoutPipe` + `io.LimitReader` が望ましい |
-| I-2 | `internal/ui/grep_model.go:297` | `parseGrepItem` は `:` で 2分割。Windows パスや `:` を含むファイル名で壊れる（panic はしない） |
-| I-3 | `internal/ui/fuzz_test.go:140` | `tea.MouseLeft` 非推奨 (SA1019) → `MouseAction` + `MouseButton` |
-| I-4 | `internal/ui/styles.go:143` | 未使用 `loadingStyle` (U1000) |
+| ID | 該当箇所 | 内容 | 対応 |
+|---|---|---|---|
+| I-1 | `internal/finder/finder.go`, `internal/grep/grep.go` | `cmd.Output()` が stdout 全体をメモリ化。巨大リポの `rg --files` は数百MB可能。`StdoutPipe` + `io.LimitReader` が望ましい | ✅ 対応済 |
+| I-2 | `internal/ui/grep_model.go:297` | `parseGrepItem` は `:` で 2分割。Windows パスや `:` を含むファイル名で壊れる（panic はしない） | ✅ 対応済 |
+| I-3 | `internal/ui/fuzz_test.go:140` | `tea.MouseLeft` 非推奨 (SA1019) → `MouseAction` + `MouseButton` | ✅ 対応済 |
+| I-4 | `internal/ui/styles.go:143` | 未使用 `loadingStyle` (U1000) | ✅ 対応済 |
+
+#### I-1: stdout サイズ上限 ✅ 対応済（2026-04-25）
+
+`internal/grep/grep.go` / `internal/finder/finder.go` 両方に `MaxCmdOutputSize = 50 * 1024 * 1024`、`ErrOutputTooLarge`、`readLimited(io.Reader, int64)`、`runWithLimit(*exec.Cmd, int64)` を追加。`cmd.Output()` を `runWithLimit`（`StdoutPipe + io.LimitReader(max+1) + io.ReadAll + Wait`）に置き換え、上限超過時は `ErrOutputTooLarge` を返して残り stdout を `io.Discard` に流して Wait deadlock を回避。`readLimited` は table-driven テストで境界（empty / within / exact / over+1 / much-larger / zero-limit）と Reader エラー伝搬をカバー。`runWithLimit` は実プロセス起動を伴うため統合テスト相当だが、既存の grep / finder の整合テスト（exit 1 = no match の保持、ctx cancel/deadline の扱い）で間接的に検証。
+
+#### I-2: parseGrepItem の堅牢化 ✅ 対応済（2026-04-25）
+
+`internal/ui/grep_model.go` の `parseGrepItem` を **左から `:数字+:` パターンを走査する実装** に変更。素朴な `SplitN(":", 3)` だと Windows パス `C:\foo\bar.go:10:hit` や ファイル名に `:` を含むケースで誤分解していたが、新実装は「`:` の直後が `\d+`、その次が `:` または文末」という条件を最左マッチで満たす位置を採用するため、`file` 側に `:` を含むケースと `text` 側に `:` を含むケース（`main.go:42:foo:bar:baz`）の両方を正しく扱える。回帰テスト: 既存 3 ケースに加え、Windows パス / `:` 含むファイル名 / text に複数 `:` / text 空 を `TestParseGrepItem` に追加（計 7 ケース）。
+
+#### I-3: 非推奨 API 解消 ✅ 対応済（2026-04-25）
+
+`internal/ui/fuzz_test.go:140` の `tea.MouseLeft`（旧 `MouseEventType`）を新 API `Action: tea.MouseActionPress, Button: tea.MouseButtonLeft` に置き換え。`staticcheck -checks=SA1019` が無指摘になることを確認。`FuzzModelUpdateView` を 5 秒回して新シグネチャでも mouse event の Update が panic なく動くことを確認。
+
+#### I-4: 未使用コード削除 ✅ 対応済（2026-04-25）
+
+`internal/ui/styles.go:143` の `loadingStyle` を削除。`staticcheck` 全チェック無指摘になったことを確認。
 
 ---
 
@@ -193,7 +209,7 @@
 5. ~~**L-2**: `exec.LookPath` で rg/fd を起動時に絶対パス解決。~~ → ✅ 2026-04-25 完了（grep / finder の両方でパッケージレベル var 化、バイナリ未検出時は明示エラー）。
 6. ~~**L-3**: rg/fd 子プロセスの env をホワイトリスト化。~~ → ✅ 2026-04-25 完了（`whitelistedEnv()` で `PATH`/`HOME`/`LANG`/`LC_*` のみ通す。エディタは UX 維持のため対象外）。
 7. **L-1**（symlink）は ⚠️ **Won't-fix**（2026-04-25 判定）。脅威モデル上、privilege escalation がなく `cat` と同等で glimpse 固有の攻撃面ではないため。詳細は L-1 セクション参照。
-8. **Info 系**は余裕のあるタイミングで対応。
+8. ~~**Info 系**~~ → ✅ 2026-04-25 完了（I-1〜I-4 全対応。`staticcheck` 無指摘）。
 9. **Fuzz 追加**: `FuzzForTerminal` は導入済。残る `FuzzParseGrepItem` / `FuzzReadFileRange` は未着手。
 
 ---

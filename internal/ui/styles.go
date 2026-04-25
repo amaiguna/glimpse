@@ -138,8 +138,3 @@ func highlightMatches(line, query string) string {
 var errorStyle = lipgloss.NewStyle().
 	Foreground(lipgloss.Color("196")).
 	Bold(true)
-
-// ローディング表示
-var loadingStyle = lipgloss.NewStyle().
-	Foreground(colorSecondary).
-	Italic(true)
