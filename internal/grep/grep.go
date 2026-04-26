@@ -1,9 +1,11 @@
 package grep
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -31,14 +33,67 @@ func readLimited(r io.Reader, max int64) ([]byte, error) {
 	return out, nil
 }
 
+// MaxCmdStderrSize は子プロセスの stderr を取り込む最大バイト数（#008）。
+// rg / fd の単一エラーメッセージは数百〜数 KB なので 64KB あれば十分で、
+// それ以降は debug バッファに収まらないので静かにドロップする。
+const MaxCmdStderrSize = 64 * 1024
+
+// CmdError は外部コマンドが非0終了したときの構造化エラー（#008）。
+// ExitCode と Stderr を呼び出し側に渡し、`exit status N` だけの不可解な
+// メッセージで終わらせない。errors.As で取り出して分岐できる。
+type CmdError struct {
+	ExitCode int
+	Stderr   string // 末尾の改行は除去済み
+	Err      error  // 通常 *exec.ExitError
+}
+
+// Error は exit status と stderr の要約を結合した一行を返す。
+func (e *CmdError) Error() string {
+	base := "command failed"
+	if e.Err != nil {
+		base = e.Err.Error()
+	}
+	stderr := strings.TrimSpace(e.Stderr)
+	if stderr == "" {
+		return base
+	}
+	return fmt.Sprintf("%s: %s", base, stderr)
+}
+
+// Unwrap は内側の err を返し、errors.Is/As の連鎖を保つ。
+func (e *CmdError) Unwrap() error { return e.Err }
+
+// boundedWriter は最初の max バイトだけバッファに書き込み、それ以降は黙ってドロップする。
+// stderr 取り込み中に max を超えても Write は成功扱いにし、子プロセスを SIGPIPE で
+// 落とさないようにする。
+type boundedWriter struct {
+	buf *bytes.Buffer
+	max int
+}
+
+func (w *boundedWriter) Write(p []byte) (int, error) {
+	remaining := w.max - w.buf.Len()
+	if remaining > 0 {
+		if len(p) <= remaining {
+			w.buf.Write(p)
+		} else {
+			w.buf.Write(p[:remaining])
+		}
+	}
+	return len(p), nil
+}
+
 // runWithLimit は cmd を Start → readLimited → Wait の順で実行し、
 // stdout が max を超えた時点で ErrOutputTooLarge を返す。
 // 超過時は残り stdout を破棄し、子プロセスは ctx キャンセル/SIGPIPE 経由で終了する。
+// stderr は MaxCmdStderrSize で打ち切りつつ取り込み、非0終了時は CmdError でラップする（#008）。
 func runWithLimit(cmd *exec.Cmd, max int64) ([]byte, error) {
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err
 	}
+	var stderrBuf bytes.Buffer
+	cmd.Stderr = &boundedWriter{buf: &stderrBuf, max: MaxCmdStderrSize}
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
@@ -50,7 +105,19 @@ func runWithLimit(cmd *exec.Cmd, max int64) ([]byte, error) {
 	if readErr != nil {
 		return nil, readErr
 	}
-	return out, waitErr
+	if waitErr != nil {
+		exitCode := -1
+		var exitErr *exec.ExitError
+		if errors.As(waitErr, &exitErr) {
+			exitCode = exitErr.ExitCode()
+		}
+		return nil, &CmdError{
+			ExitCode: exitCode,
+			Stderr:   strings.TrimRight(stderrBuf.String(), "\n"),
+			Err:      waitErr,
+		}
+	}
+	return out, nil
 }
 
 // rgBinary はパッケージ初期化時に LookPath で解決した rg の絶対パス。
@@ -137,7 +204,8 @@ func Search(ctx context.Context, pattern string) ([]Match, error) {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, ctxErr
 		}
-		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+		var cmdErr *CmdError
+		if errors.As(err, &cmdErr) && cmdErr.ExitCode == 1 {
 			return nil, nil
 		}
 		return nil, err

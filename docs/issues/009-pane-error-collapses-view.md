@@ -1,5 +1,7 @@
 # Issue #009: pane.Err() が真の時に View を全崩壊させる UX
 
+**Status:** Closed (2026-04-26) — `internal/ui/model.go` の View 早期 return を廃止。`pane.Err()` non-nil 時は `errorLine` として header 直下に挿入し、リスト/プレビューの通常レイアウトを維持する方式に変更。golden (`error.txt`, `grep_error.txt`) を更新、`TestViewKeepsLayoutOnPaneError` で finder/grep 両モードでの不変条件を pin。
+
 ## 現状
 
 `internal/ui/model.go:310-313`:

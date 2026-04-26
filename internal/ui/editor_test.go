@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // M-2 回帰: エディタ起動コマンドの引数組み立て。
@@ -70,6 +71,22 @@ func TestBuildEditorArgs(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+// #010: $EDITOR が PATH 上に見つからない場合、openEditorCmd は tea.ExecProcess に到達せず
+// その場で EditorFinishedMsg{Err: ...} を発火する Cmd を返す（事前検証 = LookPath）。
+// この事前検証によって minimal 環境（vim 不在等）で「何も起きない」体験を防ぐ。
+func TestOpenEditorCmdReportsMissingBinary(t *testing.T) {
+	t.Setenv("EDITOR", "this-binary-does-not-exist-glimpse-test-xyz")
+
+	cmd := openEditorCmd("file.go", 0)
+	require.NotNil(t, cmd)
+
+	msg := cmd()
+	finished, ok := msg.(EditorFinishedMsg)
+	require.Truef(t, ok, "Expected EditorFinishedMsg, got %T", msg)
+	require.Error(t, finished.Err)
+	assert.Contains(t, finished.Err.Error(), "this-binary-does-not-exist-glimpse-test-xyz")
 }
 
 // 「ファイル名がフラグに化ける」不変条件: 生成された argv には

@@ -3,7 +3,10 @@ package finder
 import (
 	"context"
 	"errors"
+	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"testing/iotest"
@@ -104,6 +107,118 @@ func TestWhitelistedEnv(t *testing.T) {
 	assert.NotContains(t, m, "LD_PRELOAD", "LD_PRELOAD は継承されてはならない")
 	assert.NotContains(t, m, "GIT_SSH_COMMAND")
 	assert.NotContains(t, m, "AWS_SECRET_ACCESS_KEY", "クレデンシャル系は継承されてはならない")
+}
+
+// #008: CmdError は非0終了時の構造化情報を保持し、Error() に stderr を含める。
+func TestCmdErrorErrorIncludesStderr(t *testing.T) {
+	inner := errors.New("exit status 2")
+	e := &CmdError{ExitCode: 2, Stderr: "fd: invalid value", Err: inner}
+	got := e.Error()
+	assert.Contains(t, got, "exit status 2")
+	assert.Contains(t, got, "fd: invalid value")
+}
+
+func TestCmdErrorErrorWithoutStderr(t *testing.T) {
+	inner := errors.New("exit status 1")
+	e := &CmdError{ExitCode: 1, Stderr: "", Err: inner}
+	assert.Equal(t, "exit status 1", e.Error())
+}
+
+func TestCmdErrorUnwrap(t *testing.T) {
+	inner := errors.New("inner")
+	e := &CmdError{ExitCode: 2, Stderr: "x", Err: inner}
+	assert.True(t, errors.Is(e, inner))
+}
+
+func requireShell(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows では /bin/sh によるテストをスキップ")
+	}
+	if _, err := exec.LookPath("/bin/sh"); err != nil {
+		t.Skipf("/bin/sh が見つからないためスキップ: %v", err)
+	}
+}
+
+// #008: runWithLimit は子プロセスの stderr を捕捉し、非0終了時に CmdError でラップする。
+func TestRunWithLimitCapturesStderrOnNonZeroExit(t *testing.T) {
+	requireShell(t)
+	cmd := exec.Command("/bin/sh", "-c", "echo 'fd: not a directory' >&2; exit 2")
+	_, err := runWithLimit(cmd, 1024)
+	require.Error(t, err)
+	var cmdErr *CmdError
+	require.ErrorAs(t, err, &cmdErr)
+	assert.Equal(t, 2, cmdErr.ExitCode)
+	assert.Contains(t, cmdErr.Stderr, "fd: not a directory")
+}
+
+// #008: stderr が膨大でも MaxCmdStderrSize で切り詰められる。
+func TestRunWithLimitStderrIsBounded(t *testing.T) {
+	requireShell(t)
+	script := `awk 'BEGIN{ for(i=0;i<1048576;i++) printf "x"; print "" > "/dev/stderr" }' >&2; exit 2`
+	cmd := exec.Command("/bin/sh", "-c", script)
+	_, err := runWithLimit(cmd, 1024)
+	require.Error(t, err)
+	var cmdErr *CmdError
+	require.ErrorAs(t, err, &cmdErr)
+	assert.LessOrEqual(t, len(cmdErr.Stderr), MaxCmdStderrSize)
+}
+
+func TestRunWithLimitNoErrorOnSuccess(t *testing.T) {
+	requireShell(t)
+	cmd := exec.Command("/bin/sh", "-c", "echo hello")
+	out, err := runWithLimit(cmd, 1024)
+	require.NoError(t, err)
+	assert.Equal(t, "hello\n", string(out))
+}
+
+// #008: fd 失敗時に rg にフォールバックする既存挙動が CmdError 経由でも保たれる。
+func TestListFilesFallsBackFromFdToRg(t *testing.T) {
+	requireShell(t)
+	origFd, origRg := fdBinary, rgBinary
+	t.Cleanup(func() {
+		fdBinary = origFd
+		rgBinary = origRg
+	})
+
+	dir := t.TempDir()
+	fakeFd := filepath.Join(dir, "fd")
+	require.NoError(t, writeExecutable(fakeFd, "#!/bin/sh\necho 'fd: explode' >&2\nexit 2\n"))
+	fakeRg := filepath.Join(dir, "rg")
+	require.NoError(t, writeExecutable(fakeRg, "#!/bin/sh\nprintf 'a.go\\nb.go\\n'\n"))
+	fdBinary = fakeFd
+	rgBinary = fakeRg
+
+	files, err := ListFiles(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, []string{"a.go", "b.go"}, files)
+}
+
+// #008: rg --files の非0終了は CmdError として上位に伝搬する。
+func TestListFilesPropagatesCmdErrorFromRg(t *testing.T) {
+	requireShell(t)
+	origFd, origRg := fdBinary, rgBinary
+	t.Cleanup(func() {
+		fdBinary = origFd
+		rgBinary = origRg
+	})
+
+	dir := t.TempDir()
+	fakeRg := filepath.Join(dir, "rg")
+	require.NoError(t, writeExecutable(fakeRg, "#!/bin/sh\necho 'rg: io error' >&2\nexit 2\n"))
+	fdBinary = ""
+	rgBinary = fakeRg
+
+	_, err := ListFiles(context.Background())
+	require.Error(t, err)
+	var cmdErr *CmdError
+	require.ErrorAs(t, err, &cmdErr)
+	assert.Equal(t, 2, cmdErr.ExitCode)
+	assert.Contains(t, cmdErr.Stderr, "rg: io error")
+}
+
+func writeExecutable(path, body string) error {
+	return os.WriteFile(path, []byte(body), 0o755)
 }
 
 // fd / rg の両方が見つからない場合、ListFiles は明示的なエラーを返す。

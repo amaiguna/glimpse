@@ -566,6 +566,123 @@ func TestViewShowsError(t *testing.T) {
 	assert.Contains(t, view, "something went wrong")
 }
 
+// #010: SetErr は両ペインで動作し、Err() で取り出せること（Pane インターフェース契約）。
+func TestPaneSetErr(t *testing.T) {
+	t.Run("finder", func(t *testing.T) {
+		var p Pane = NewFinderModel()
+		sentinel := errors.New("editor failed")
+		p.SetErr(sentinel)
+		assert.Equal(t, sentinel, p.Err())
+	})
+	t.Run("grep", func(t *testing.T) {
+		var p Pane = NewGrepModel()
+		sentinel := errors.New("editor failed")
+		p.SetErr(sentinel)
+		assert.Equal(t, sentinel, p.Err())
+	})
+}
+
+// #010: EditorFinishedMsg{Err: x} が来たらアクティブペインに反映され、
+// View にエラーメッセージが表示される（#009 のステータス行を経由）。
+func TestEditorFinishedMsgErrorSurfacesOnActivePane(t *testing.T) {
+	t.Run("finder mode active", func(t *testing.T) {
+		m := NewModel()
+		m.width = 80
+		m.height = 24
+		sentinel := errors.New("editor: launch failed")
+
+		m2, _ := m.Update(EditorFinishedMsg{Err: sentinel})
+		got := m2.(Model)
+
+		assert.Equal(t, sentinel, got.finderPane.Err())
+		assert.Contains(t, got.View(), "editor: launch failed",
+			"エディタ起動失敗が View に表示されること")
+	})
+	t.Run("grep mode active", func(t *testing.T) {
+		m := NewModel()
+		m.width = 80
+		m.height = 24
+		m.mode = ModeGrep
+		sentinel := errors.New("editor: launch failed")
+
+		m2, _ := m.Update(EditorFinishedMsg{Err: sentinel})
+		got := m2.(Model)
+
+		assert.Equal(t, sentinel, got.grepPane.Err())
+		assert.Contains(t, got.View(), "editor: launch failed")
+	})
+}
+
+// #010: EditorFinishedMsg{Err: nil}（正常終了）は既存の err を勝手に消さない。
+// エディタ起動成功は他の状態とは独立しているため。
+func TestEditorFinishedMsgWithoutErrorDoesNotClearExistingErr(t *testing.T) {
+	m := NewModel()
+	m.width = 80
+	m.height = 24
+	preExisting := errors.New("preexisting")
+	m.finderPane.err = preExisting
+
+	m2, _ := m.Update(EditorFinishedMsg{Err: nil})
+	got := m2.(Model)
+
+	assert.Equal(t, preExisting, got.finderPane.Err(),
+		"成功時の EditorFinishedMsg は他のエラーを消すべきではない")
+}
+
+// #009: pane.Err() が non-nil でも、textinput / リストペイン枠 / プレビューペイン枠を含む
+// 通常レイアウトを維持し、ユーザーが修正のためのキー入力を続けられること。
+// 現状の早期 return では本テストは failure（枠線が消失する）。
+func TestViewKeepsLayoutOnPaneError(t *testing.T) {
+	tests := []struct {
+		name string
+		mode Mode
+		err  error
+	}{
+		{
+			name: "finder pane error keeps layout",
+			mode: ModeFinder,
+			err:  errors.New("fd: command not found"),
+		},
+		{
+			name: "grep pane error keeps layout",
+			mode: ModeGrep,
+			err:  errors.New("rg: regex parse error: unclosed character class"),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := NewModel()
+			m.width = 80
+			m.height = 24
+			m.mode = tt.mode
+			if tt.mode == ModeFinder {
+				m.finderPane.loading = false
+				m.finderPane.err = tt.err
+			} else {
+				m.grepPane.loading = false
+				m.grepPane.err = tt.err
+			}
+
+			view := m.View()
+
+			// ヘッダーのモードラベルとプロンプトが残っていること
+			label := "Files"
+			if tt.mode == ModeGrep {
+				label = "Grep"
+			}
+			assert.Contains(t, view, label, "モードラベルが残っているべき")
+			assert.Contains(t, view, ">", "textinput プロンプトが残っているべき")
+
+			// リスト/プレビューの枠線が描画されていること（通常レイアウト維持の証拠）
+			assert.Contains(t, view, "┌", "ペイン上枠が残っているべき")
+			assert.Contains(t, view, "└", "ペイン下枠が残っているべき")
+
+			// エラーメッセージは引き続き含まれること
+			assert.Contains(t, view, tt.err.Error())
+		})
+	}
+}
+
 func TestViewContainsPreview(t *testing.T) {
 	m := NewModel()
 	m.finderPane.items = []string{"main.go"}

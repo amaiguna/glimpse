@@ -185,6 +185,45 @@ func TestScenario_GrepError(t *testing.T) {
 	assert.Contains(t, view, "error")
 }
 
+// #007: rg が broken regex で exit 2 + stderr を返すシナリオ。
+// 直前の検索結果が維持されつつ、stderr 内容が読みやすく ESC 込みのレイアウト崩壊なく表示される。
+func TestScenario_GrepRecoverableRegexError(t *testing.T) {
+	m := NewModel()
+	m, _ = updateModel(t, m, tea.WindowSizeMsg{Width: 80, Height: 24})
+	m, _ = updateModel(t, m, specialKeyMsg(tea.KeyTab))
+
+	// 直前のヒット結果が表示されている状態を作る
+	prevMatches := []grep.Match{
+		{File: "main.go", Line: 1, Text: "package main"},
+	}
+	m, _ = updateModel(t, m, GrepDoneMsg{Matches: prevMatches})
+	viewBefore := stripANSI(m.View())
+	assert.Contains(t, viewBefore, "main.go", "事前検索結果が表示されている")
+
+	// broken regex によるエラーが入る（#008 の CmdError が伝搬してくる想定）
+	cmdErr := &grep.CmdError{
+		ExitCode: 2,
+		Stderr:   "regex parse error: unclosed character class",
+	}
+	m, _ = updateModel(t, m, GrepErrorMsg{Err: cmdErr})
+
+	viewAfter := stripANSI(m.View())
+
+	// 1) ステータス行に regex エラー本文が出る（exit status のノイズなし）
+	assert.Contains(t, viewAfter, "regex parse error: unclosed character class")
+	assert.NotContains(t, viewAfter, "exit status 2",
+		"exit status の冗長表記は UI に出さない")
+
+	// 2) 通常レイアウトが維持されている (textinput / 枠線)
+	assert.Contains(t, viewAfter, "[Grep]")
+	assert.Contains(t, viewAfter, "┌")
+	assert.Contains(t, viewAfter, "└")
+
+	// 3) 直前の検索結果（main.go）が消えていない
+	assert.Contains(t, viewAfter, "main.go",
+		"broken regex 入力中も前回ヒットは維持されるべき")
+}
+
 // --- モード切替エッジケース ---
 
 func TestScenario_SwitchModeAfterScroll(t *testing.T) {

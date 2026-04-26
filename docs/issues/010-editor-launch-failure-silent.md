@@ -1,5 +1,7 @@
 # Issue #010: エディタ起動失敗が黙殺される
 
+**Status:** Closed (2026-04-26) — `Pane` インターフェースに `SetErr(error)` を追加し（→ #006 再評価ライン到達: メソッド数 12）、両モデルに実装。`openEditorCmd` で `exec.LookPath` 事前検証を行い、失敗時はその場で `EditorFinishedMsg{Err}` を発火。`EditorFinishedMsg` ハンドラが active pane の `SetErr` 経由で #009 のステータス行に表示する。
+
 ## 現状
 
 `internal/ui/model.go:282-292`:

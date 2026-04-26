@@ -1,8 +1,10 @@
 package finder
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -100,14 +102,63 @@ func ListFiles(ctx context.Context) ([]string, error) {
 	return lines, nil
 }
 
+// MaxCmdStderrSize は子プロセスの stderr を取り込む最大バイト数（#008）。
+// fd / rg の単一エラーメッセージは数百〜数 KB なので 64KB あれば十分。
+const MaxCmdStderrSize = 64 * 1024
+
+// CmdError は外部コマンドが非0終了したときの構造化エラー（#008）。
+// `exit status N` だけの不可解なメッセージで終わらせず、stderr 本文を上位に渡す。
+type CmdError struct {
+	ExitCode int
+	Stderr   string
+	Err      error
+}
+
+// Error は exit status と stderr 要約を結合した一行を返す。
+func (e *CmdError) Error() string {
+	base := "command failed"
+	if e.Err != nil {
+		base = e.Err.Error()
+	}
+	stderr := strings.TrimSpace(e.Stderr)
+	if stderr == "" {
+		return base
+	}
+	return fmt.Sprintf("%s: %s", base, stderr)
+}
+
+// Unwrap は内側の err を返し errors.Is/As の連鎖を保つ。
+func (e *CmdError) Unwrap() error { return e.Err }
+
+// boundedWriter は最初の max バイトだけバッファに蓄え、それ以降は黙って捨てる。
+// 子プロセスの stderr が肥大化してもメモリを食い潰さないための保険。
+type boundedWriter struct {
+	buf *bytes.Buffer
+	max int
+}
+
+func (w *boundedWriter) Write(p []byte) (int, error) {
+	remaining := w.max - w.buf.Len()
+	if remaining > 0 {
+		if len(p) <= remaining {
+			w.buf.Write(p)
+		} else {
+			w.buf.Write(p[:remaining])
+		}
+	}
+	return len(p), nil
+}
+
 // runWithLimit は cmd を Start → readLimited → Wait の順で実行し、
 // stdout が max を超えた時点で ErrOutputTooLarge を返す。
-// 超過時は残り stdout を破棄し、子プロセスは ctx キャンセル/SIGPIPE 経由で終了する。
+// stderr は MaxCmdStderrSize で打ち切りつつ取り込み、非0終了時は CmdError でラップする（#008）。
 func runWithLimit(cmd *exec.Cmd, max int64) ([]byte, error) {
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err
 	}
+	var stderrBuf bytes.Buffer
+	cmd.Stderr = &boundedWriter{buf: &stderrBuf, max: MaxCmdStderrSize}
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
@@ -119,5 +170,17 @@ func runWithLimit(cmd *exec.Cmd, max int64) ([]byte, error) {
 	if readErr != nil {
 		return nil, readErr
 	}
-	return out, waitErr
+	if waitErr != nil {
+		exitCode := -1
+		var exitErr *exec.ExitError
+		if errors.As(waitErr, &exitErr) {
+			exitCode = exitErr.ExitCode()
+		}
+		return nil, &CmdError{
+			ExitCode: exitCode,
+			Stderr:   strings.TrimRight(stderrBuf.String(), "\n"),
+			Err:      waitErr,
+		}
+	}
+	return out, nil
 }

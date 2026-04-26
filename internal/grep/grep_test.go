@@ -3,7 +3,10 @@ package grep
 import (
 	"context"
 	"errors"
+	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"testing/iotest"
@@ -11,6 +14,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// writeExecutable は Search 経由のサブプロセス起動テストで使う使い捨てスクリプトを書き出す。
+func writeExecutable(path, body string) error {
+	return os.WriteFile(path, []byte(body), 0o755)
+}
 
 func envMap(env []string) map[string]string {
 	m := make(map[string]string, len(env))
@@ -62,10 +70,10 @@ func TestParseRgJSON(t *testing.T) {
 			want:  nil,
 		},
 		{
-			name:  "match type with invalid data is skipped",
+			name: "match type with invalid data is skipped",
 			input: `{"type":"match","data":[1,2,3]}
 {"type":"match","data":{"path":{"text":""},"lines":{"text":"x"},"line_number":1,"submatches":[]}}`,
-			want:  nil,
+			want: nil,
 		},
 		{
 			name: "mixed valid and invalid lines",
@@ -179,6 +187,116 @@ func TestSearchReturnsErrorWhenBinaryMissing(t *testing.T) {
 	assert.Contains(t, err.Error(), "rg")
 }
 
+// #008: CmdError は非0終了時の構造化情報を保持し、Error() に stderr を
+// 含めることで「exit status 2」だけの不可解なメッセージを解消する。
+func TestCmdErrorErrorIncludesStderr(t *testing.T) {
+	inner := errors.New("exit status 2")
+	e := &CmdError{ExitCode: 2, Stderr: "regex parse error: foo", Err: inner}
+	got := e.Error()
+	assert.Contains(t, got, "exit status 2")
+	assert.Contains(t, got, "regex parse error: foo")
+}
+
+// #008: stderr が空ならラップされた err と同等のメッセージを返す。
+func TestCmdErrorErrorWithoutStderr(t *testing.T) {
+	inner := errors.New("exit status 1")
+	e := &CmdError{ExitCode: 1, Stderr: "", Err: inner}
+	assert.Equal(t, "exit status 1", e.Error())
+}
+
+// #008: errors.Unwrap で内側の err を取り出せる（errors.Is/As の連鎖を保つ）。
+func TestCmdErrorUnwrap(t *testing.T) {
+	inner := errors.New("inner")
+	e := &CmdError{ExitCode: 2, Stderr: "x", Err: inner}
+	assert.True(t, errors.Is(e, inner))
+}
+
+// requireShell は /bin/sh を要する小さなサブプロセス起動テストの前提。
+// Windows ではスキップ、それ以外で sh が無ければエラーで落とす。
+func requireShell(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows では /bin/sh によるテストをスキップ")
+	}
+	if _, err := exec.LookPath("/bin/sh"); err != nil {
+		t.Skipf("/bin/sh が見つからないためスキップ: %v", err)
+	}
+}
+
+// #008: runWithLimit は子プロセスの stderr を捕捉し、非0終了時に CmdError でラップする。
+func TestRunWithLimitCapturesStderrOnNonZeroExit(t *testing.T) {
+	requireShell(t)
+	cmd := exec.Command("/bin/sh", "-c", "echo 'regex parse error: oops' >&2; exit 2")
+	_, err := runWithLimit(cmd, 1024)
+	require.Error(t, err)
+	var cmdErr *CmdError
+	require.ErrorAs(t, err, &cmdErr)
+	assert.Equal(t, 2, cmdErr.ExitCode)
+	assert.Contains(t, cmdErr.Stderr, "regex parse error: oops")
+}
+
+// #008: stderr が膨大でも MaxCmdStderrSize で切り詰められ、メモリが膨らまない。
+func TestRunWithLimitStderrIsBounded(t *testing.T) {
+	requireShell(t)
+	// 1MB 相当の stderr を吐き出して非0終了
+	script := `awk 'BEGIN{ for(i=0;i<1048576;i++) printf "x"; print "" > "/dev/stderr" }' >&2; exit 2`
+	cmd := exec.Command("/bin/sh", "-c", script)
+	_, err := runWithLimit(cmd, 1024)
+	require.Error(t, err)
+	var cmdErr *CmdError
+	require.ErrorAs(t, err, &cmdErr)
+	assert.LessOrEqual(t, len(cmdErr.Stderr), MaxCmdStderrSize,
+		"stderr 取り込みは MaxCmdStderrSize 以下に抑える必要がある")
+}
+
+// #008: 正常終了時は CmdError を返さない（既存挙動の回帰防止）。
+func TestRunWithLimitNoErrorOnSuccess(t *testing.T) {
+	requireShell(t)
+	cmd := exec.Command("/bin/sh", "-c", "echo hello")
+	out, err := runWithLimit(cmd, 1024)
+	require.NoError(t, err)
+	assert.Equal(t, "hello\n", string(out))
+}
+
+// #008 + 既存 Search の回帰: rg 相当の exit code 1（マッチなし）は CmdError ではなく
+// nil, nil として扱われ続ける必要がある。
+func TestSearchExitCode1IsNoMatch(t *testing.T) {
+	requireShell(t)
+	orig := rgBinary
+	t.Cleanup(func() { rgBinary = orig })
+
+	// rg のフリをして exit 1 を返すスクリプトを作る
+	dir := t.TempDir()
+	fake := filepath.Join(dir, "rg")
+	err := writeExecutable(fake, "#!/bin/sh\nexit 1\n")
+	require.NoError(t, err)
+	rgBinary = fake
+
+	matches, err := Search(context.Background(), "anything")
+	require.NoError(t, err)
+	assert.Nil(t, matches)
+}
+
+// #008: rg が exit code 2 + stderr を返すケースで、Search はそれを CmdError として伝搬する。
+func TestSearchExitCode2PropagatesCmdError(t *testing.T) {
+	requireShell(t)
+	orig := rgBinary
+	t.Cleanup(func() { rgBinary = orig })
+
+	dir := t.TempDir()
+	fake := filepath.Join(dir, "rg")
+	err := writeExecutable(fake, "#!/bin/sh\necho 'regex parse error: unclosed character class' >&2\nexit 2\n")
+	require.NoError(t, err)
+	rgBinary = fake
+
+	_, err = Search(context.Background(), "[")
+	require.Error(t, err)
+	var cmdErr *CmdError
+	require.ErrorAs(t, err, &cmdErr)
+	assert.Equal(t, 2, cmdErr.ExitCode)
+	assert.Contains(t, cmdErr.Stderr, "regex parse error")
+}
+
 func FuzzParseRgJSON(f *testing.F) {
 	// シード: rgが実際に出力する形式と、壊れた入力のバリエーション
 	f.Add(`{"type":"match","data":{"path":{"text":"main.go"},"lines":{"text":"func main()\n"},"line_number":10,"submatches":[]}}`)
@@ -186,7 +304,7 @@ func FuzzParseRgJSON(f *testing.F) {
 	f.Add(``)
 	f.Add(`{invalid`)
 	f.Add(`{"type":"match","data":null}`)
-	f.Add(strings.Repeat(`{"type":"match","data":{"path":{"text":"x"},"lines":{"text":"y"},"line_number":1,"submatches":[]}}` + "\n", 100))
+	f.Add(strings.Repeat(`{"type":"match","data":{"path":{"text":"x"},"lines":{"text":"y"},"line_number":1,"submatches":[]}}`+"\n", 100))
 
 	f.Fuzz(func(t *testing.T, input string) {
 		// パニックせずに返ればOK — 戻り値の正しさは問わない

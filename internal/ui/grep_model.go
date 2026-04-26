@@ -78,7 +78,8 @@ func (g *GrepModel) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		g.cursor = 0
 	case GrepErrorMsg:
 		g.loading = false
-		g.err = msg.Err
+		g.err = simplifyGrepError(msg.Err)
+		// items は維持する（broken regex 入力中に前回ヒットを消さない / #007）。
 	case debounceTickMsg:
 		return g.handleDebounceTick(msg)
 	}
@@ -221,9 +222,10 @@ func (g *GrepModel) FilePath() string {
 	return path
 }
 
-func (g *GrepModel) Query() string   { return g.textInput.Value() }
-func (g *GrepModel) IsLoading() bool { return g.loading }
-func (g *GrepModel) Err() error      { return g.err }
+func (g *GrepModel) Query() string    { return g.textInput.Value() }
+func (g *GrepModel) IsLoading() bool  { return g.loading }
+func (g *GrepModel) Err() error       { return g.err }
+func (g *GrepModel) SetErr(err error) { g.err = err }
 
 // PreviewRange はプレビューの表示開始行（1-based）を返す。
 // ヒット行がプレビューの中央付近に来るよう計算する。
@@ -307,6 +309,21 @@ func (g *GrepModel) Focus() tea.Cmd {
 // Blur はテキスト入力のフォーカスを外す。
 func (g *GrepModel) Blur() {
 	g.textInput.Blur()
+}
+
+// simplifyGrepError は UI 表示用にエラーメッセージを整形する（#007）。
+// rg が non-zero exit + stderr を返したケース（broken regex など）では、
+// "exit status 2:" の冗長プレフィックスを落として stderr 本文だけを surface する。
+// stderr が空、または CmdError ではない場合は元のエラーをそのまま返す。
+func simplifyGrepError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var cmdErr *grep.CmdError
+	if errors.As(err, &cmdErr) && strings.TrimSpace(cmdErr.Stderr) != "" {
+		return errors.New(strings.TrimSpace(cmdErr.Stderr))
+	}
+	return err
 }
 
 // --- ヘルパー関数 ---

@@ -28,6 +28,10 @@ type Pane interface {
 	IsLoading() bool
 	// Err はエラーがあれば返す。
 	Err() error
+	// SetErr はペインに表示すべきエラーをセットする（#010）。
+	// エディタ起動失敗のように Pane 外部で生じた非同期エラーを active pane の
+	// ステータス行に表面化する経路として使う。
+	SetErr(err error)
 	// TextInputView はヘッダー用テキスト入力の View 文字列を返す。
 	TextInputView() string
 	// OpenTarget はエディタで開く対象のファイルパスと行番号を返す。

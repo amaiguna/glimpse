@@ -207,9 +207,10 @@ func (f *FinderModel) FilePath() string {
 	return f.SelectedItem()
 }
 
-func (f *FinderModel) Query() string   { return f.textInput.Value() }
-func (f *FinderModel) IsLoading() bool { return f.loading }
-func (f *FinderModel) Err() error      { return f.err }
+func (f *FinderModel) Query() string    { return f.textInput.Value() }
+func (f *FinderModel) IsLoading() bool  { return f.loading }
+func (f *FinderModel) Err() error       { return f.err }
+func (f *FinderModel) SetErr(err error) { f.err = err }
 
 // DecoratePreview はプレビューコンテンツをそのまま返す（Finder モードでは装飾なし）。
 func (f *FinderModel) DecoratePreview(content string, width int) string {

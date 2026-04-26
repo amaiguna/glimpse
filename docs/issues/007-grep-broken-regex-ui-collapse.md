@@ -1,5 +1,7 @@
 # Issue #007: grep モードで不正 regex 入力時に UI が崩壊する
 
+**Status:** Closed (2026-04-26) — #008（stderr 捕捉 / `CmdError`）と #009（View 早期 return 廃止）の上に、`simplifyGrepError` で `*grep.CmdError` の stderr 部分のみを surface する処理を追加。前回ヒットを維持しつつ、`exit status 2:` 冗長表記を除いた regex エラーを textinput 直下のステータス行に表示する。
+
 ## 現状
 
 grep モードで textinput に不正な正規表現（`[`, `(?`, `[unclosed` 等）を入力すると、画面全体が崩壊し、`error: exit status 2` という意味不明な 1 行だけが残る。textinput / 結果リスト / preview ペインなどの通常レイアウトはすべて消える。

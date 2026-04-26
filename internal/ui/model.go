@@ -137,6 +137,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case EditorFinishedMsg:
+		// エディタ起動失敗（LookPath 失敗 / exec 失敗 / 非0 終了）を active pane の
+		// ステータス行に surface する（#010）。成功時は他の状態に触れない。
+		if msg.Err != nil {
+			m.activePane().SetErr(msg.Err)
+		}
 		return m, nil
 
 	// ペイン固有 Msg → PaneTarget() で宛先を判別
@@ -279,10 +284,18 @@ func (m *Model) previewCmd() tea.Cmd {
 // openEditorCmd は $EDITOR でファイルを開くコマンドを返す。
 // 引数組み立ては buildEditorArgs に委譲し、エディタ別の形式差と
 // 悪意あるファイル名（`-` `+` 始まり）によるフラグ注入を吸収する。
+// LookPath で事前検証を行い、エディタが PATH 上に無いケースを
+// その場で EditorFinishedMsg{Err: ...} として表面化する（#010）。
+// ExecProcess に到達してから「何も起きない」体験を防ぐ目的。
 func openEditorCmd(file string, line int) tea.Cmd {
 	editor := os.Getenv("EDITOR")
 	if editor == "" {
 		editor = "vim"
+	}
+	if _, err := exec.LookPath(editor); err != nil {
+		return func() tea.Msg {
+			return EditorFinishedMsg{Err: fmt.Errorf("editor %q not found: %w", editor, err)}
+		}
 	}
 	args := buildEditorArgs(editor, file, line)
 	c := exec.Command(editor, args...)
@@ -307,9 +320,11 @@ func (m Model) View() string {
 		header = ansi.Truncate(header, m.width, "")
 	}
 
-	// エラー表示（枠線なしで早期リターン）
-	if pane.Err() != nil {
-		return header + "\n" + errorStyle.Render(fmt.Sprintf("error: %s", pane.Err().Error())) + "\n"
+	// エラーはステータス行として header 直下に出す（#009）。
+	// 早期 return をせず通常レイアウトを維持し、修正のためのキー入力を続けられるようにする。
+	errorLine := ""
+	if e := pane.Err(); e != nil {
+		errorLine = errorStyle.Render(fmt.Sprintf("error: %s", e.Error())) + "\n"
 	}
 
 	// レイアウト計算
@@ -354,5 +369,5 @@ func (m Model) View() string {
 
 	body := lipgloss.JoinHorizontal(lipgloss.Top, leftPane, rightPane)
 
-	return header + "\n" + body
+	return header + "\n" + errorLine + body
 }

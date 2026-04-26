@@ -1,5 +1,7 @@
 # Issue #008: 外部コマンドの stderr 喪失でエラー診断が無効化
 
+**Status:** Closed (2026-04-26) — `internal/grep` / `internal/finder` の双方に `CmdError{ExitCode, Stderr, Err}` と `MaxCmdStderrSize`(64KB) を導入。`runWithLimit` が `cmd.Stderr` を `boundedWriter` に取り込み、非0終了時に CmdError でラップして上位に伝搬する。`grep.Search` の exit-1-no-match 判定は `errors.As` 経由に切替。
+
 ## 現状
 
 `internal/grep/grep.go` の `runWithLimit`、`internal/finder/finder.go` の `runWithLimit` ともに `cmd.StdoutPipe` のみ設定し、`cmd.Stderr` を未設定のまま実行している。

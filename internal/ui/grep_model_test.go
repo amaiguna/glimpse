@@ -1,11 +1,13 @@
 package ui
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/amaiguna/glimpse-tui/internal/grep"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestGrepCursorMovement(t *testing.T) {
@@ -74,6 +76,57 @@ func TestGrepErrorMsg(t *testing.T) {
 
 	assert.False(t, got.loading)
 	assert.Equal(t, assert.AnError, got.Err())
+}
+
+// #007: rg が exit code 2 + stderr で返したケース（典型: regex parse error）は、
+// 表示上の冗長な "exit status 2:" プレフィックスを除いて stderr 本文のみを surface する。
+func TestGrepErrorMsgWithCmdErrorShowsStderrOnly(t *testing.T) {
+	g := NewGrepModel()
+	g.loading = true
+
+	cmdErr := &grep.CmdError{
+		ExitCode: 2,
+		Stderr:   "regex parse error: unclosed character class",
+		Err:      errors.New("exit status 2"),
+	}
+	pane, _ := g.Update(GrepErrorMsg{Err: cmdErr})
+	got := pane.(*GrepModel)
+
+	assert.False(t, got.loading)
+	require.NotNil(t, got.Err())
+	msg := got.Err().Error()
+	assert.Contains(t, msg, "regex parse error: unclosed character class")
+	assert.NotContains(t, msg, "exit status 2",
+		"UI 表示時には exit status の冗長表記は除く（stderr 本文だけにする）")
+}
+
+// #007: 前回の検索結果は GrepErrorMsg 受信後も維持され、
+// ユーザーが broken regex を修正している間にリストが空に戻らない。
+func TestGrepKeepsItemsOnError(t *testing.T) {
+	g := NewGrepModel()
+	g.items = []string{"a.go:1:foo", "b.go:2:bar"}
+
+	cmdErr := &grep.CmdError{
+		ExitCode: 2,
+		Stderr:   "regex parse error: unclosed character class",
+		Err:      errors.New("exit status 2"),
+	}
+	pane, _ := g.Update(GrepErrorMsg{Err: cmdErr})
+	got := pane.(*GrepModel)
+
+	assert.Equal(t, []string{"a.go:1:foo", "b.go:2:bar"}, got.items,
+		"エラー時も前回のヒットリストは維持される必要がある")
+}
+
+// #007: stderr が空の CmdError（または他のエラー型）は元のメッセージを尊重する。
+func TestGrepErrorMsgWithoutStderrFallsBackToOriginalError(t *testing.T) {
+	g := NewGrepModel()
+
+	pane, _ := g.Update(GrepErrorMsg{Err: errors.New("rg: executable not found in $PATH")})
+	got := pane.(*GrepModel)
+
+	require.NotNil(t, got.Err())
+	assert.Equal(t, "rg: executable not found in $PATH", got.Err().Error())
 }
 
 func TestGrepDebounceTickMsg(t *testing.T) {
