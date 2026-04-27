@@ -185,6 +185,32 @@ func TestScenario_GrepError(t *testing.T) {
 	assert.Contains(t, view, "error")
 }
 
+// #007 取りこぼし: regex エラー後にクエリを空にすると err も消える。
+// 実機で「一度エラーにする → 入力をクリアする」と err が残るバグの回帰テスト。
+func TestScenario_GrepErrorClearsAfterClearingQuery(t *testing.T) {
+	m := NewModel()
+	m, _ = updateModel(t, m, tea.WindowSizeMsg{Width: 80, Height: 24})
+	m, _ = updateModel(t, m, specialKeyMsg(tea.KeyTab))
+
+	// regex エラー状態に持ち込む
+	m, _ = updateModel(t, m, GrepErrorMsg{Err: &grep.CmdError{
+		ExitCode: 2,
+		Stderr:   "regex parse error: unclosed character class",
+	}})
+	m.grepPane.textInput.SetValue("[")
+	require.NotNil(t, m.grepPane.Err(), "前提: エラー状態になっている")
+
+	// クエリをクリア（textInput 経由で空にし、debounce を発火）
+	m.grepPane.textInput.SetValue("")
+	m.grepPane.debounceTag++
+	m, _ = updateModel(t, m, debounceTickMsg{tag: m.grepPane.debounceTag})
+
+	view := stripANSI(m.View())
+	assert.Nil(t, m.grepPane.Err(), "クエリ空 → idle 遷移で err はクリアされる")
+	assert.NotContains(t, view, "regex parse error",
+		"View 上にも前回のエラーは残らない")
+}
+
 // #007: rg が broken regex で exit 2 + stderr を返すシナリオ。
 // 直前の検索結果が維持されつつ、stderr 内容が読みやすく ESC 込みのレイアウト崩壊なく表示される。
 func TestScenario_GrepRecoverableRegexError(t *testing.T) {

@@ -118,6 +118,23 @@ func TestGrepKeepsItemsOnError(t *testing.T) {
 		"エラー時も前回のヒットリストは維持される必要がある")
 }
 
+// #007 取りこぼし: regex エラー → クエリを空に戻したとき、items だけでなく err も消える。
+// debounceTick で「これから検索しない（idle に入る）」ことが確定したタイミングで
+// 古い regex エラーは陳腐化するため、ここで一緒にクリアする。
+func TestGrepClearsErrorWhenQueryBecomesEmpty(t *testing.T) {
+	g := NewGrepModel()
+	g.err = errors.New("regex parse error: unclosed character class")
+	g.items = []string{"a.go:1:foo"}
+	g.textInput.SetValue("")
+	g.debounceTag = 1
+
+	pane, _ := g.Update(debounceTickMsg{tag: 1})
+	got := pane.(*GrepModel)
+
+	assert.Nil(t, got.Err(), "クエリが空になったらエラー表示も消えるべき")
+	assert.Nil(t, got.items, "items も既存通り消える")
+}
+
 // #007: stderr が空の CmdError（または他のエラー型）は元のメッセージを尊重する。
 func TestGrepErrorMsgWithoutStderrFallsBackToOriginalError(t *testing.T) {
 	g := NewGrepModel()

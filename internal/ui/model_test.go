@@ -629,6 +629,76 @@ func TestEditorFinishedMsgWithoutErrorDoesNotClearExistingErr(t *testing.T) {
 		"成功時の EditorFinishedMsg は他のエラーを消すべきではない")
 }
 
+// #009 回帰: rg の stderr は複数行（例: "regex parse error:\n    [\n    ^\nerror: unclosed character class"）
+// で返ってくるため、errorLine 1 行分だけ縮めるのでは足りない。
+// 実際の発生行数だけ contentHeight を縮めなければ header (textinput) が画面外に押し出される。
+func TestViewWithMultilineErrorFitsWithinHeight(t *testing.T) {
+	m := NewModel()
+	m.width = 80
+	m.height = 24
+	m.mode = ModeGrep
+	m.grepPane.loading = false
+	m.grepPane.err = errors.New("regex parse error:\n    (?:[[]])\n       ^\nerror: unclosed character class")
+
+	view := m.View()
+	lines := strings.Split(strings.TrimRight(view, "\n"), "\n")
+
+	assert.LessOrEqual(t, len(lines), m.height-1,
+		"複数行 stderr 込みでも View 全体は m.height-1 までに収まるべき")
+	assert.Contains(t, lines[0], "[Grep]",
+		"複数行エラー時も最初の行はモードラベル付きの header であるべき")
+	assert.Contains(t, lines[0], ">",
+		"header の textinput プロンプトが見えているべき")
+}
+
+// #009 回帰: エラー行を挿入したことで View の総行数が m.height を超え、
+// 端末スクロールにより header (textinput) が画面外へ押し出される事象を防ぐ。
+// 「エラー時に入力欄が見えなくなる」UX 悪化の検出網。
+func TestViewWithErrorFitsWithinHeight(t *testing.T) {
+	tests := []struct {
+		name string
+		mode Mode
+	}{
+		{"finder", ModeFinder},
+		{"grep", ModeGrep},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := NewModel()
+			m.width = 80
+			m.height = 24
+			m.mode = tt.mode
+			err := errors.New("rg: regex parse error: unclosed character class")
+			if tt.mode == ModeFinder {
+				m.finderPane.loading = false
+				m.finderPane.err = err
+			} else {
+				m.grepPane.loading = false
+				m.grepPane.err = err
+			}
+
+			view := m.View()
+			lines := strings.Split(strings.TrimRight(view, "\n"), "\n")
+
+			// 通常時 (TestViewFillsFullHeight) と同じく総行数は m.height-1 までに収める。
+			// 1 行余裕を残すのは bubbletea altscreen がカーソルを最終行に置くためで、
+			// これを超えると端末がスクロールし header が画面外に押し出される。
+			assert.LessOrEqual(t, len(lines), m.height-1,
+				"エラー行を含めた View 全体は m.height-1 までに収まるべき（超えると header が画面外に出る）")
+
+			// 最初の行は header（モードラベル + textinput）であるべき
+			label := "Files"
+			if tt.mode == ModeGrep {
+				label = "Grep"
+			}
+			assert.Contains(t, lines[0], "["+label+"]",
+				"最初の行はモードラベル付きの header であるべき（押し出されていない）")
+			assert.Contains(t, lines[0], ">",
+				"header の textinput プロンプトが見えているべき")
+		})
+	}
+}
+
 // #009: pane.Err() が non-nil でも、textinput / リストペイン枠 / プレビューペイン枠を含む
 // 通常レイアウトを維持し、ユーザーが修正のためのキー入力を続けられること。
 // 現状の早期 return では本テストは failure（枠線が消失する）。

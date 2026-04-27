@@ -322,9 +322,13 @@ func (m Model) View() string {
 
 	// エラーはステータス行として header 直下に出す（#009）。
 	// 早期 return をせず通常レイアウトを維持し、修正のためのキー入力を続けられるようにする。
+	// rg の stderr は複数行（例: "regex parse error:\n    [\n    ^\nerror: ..."）
+	// で返るため、後段で実際の行数を contentHeight から差し引く。
 	errorLine := ""
+	errorRows := 0
 	if e := pane.Err(); e != nil {
 		errorLine = errorStyle.Render(fmt.Sprintf("error: %s", e.Error())) + "\n"
+		errorRows = strings.Count(errorLine, "\n")
 	}
 
 	// レイアウト計算
@@ -332,6 +336,15 @@ func (m Model) View() string {
 	borderH := 2
 	borderW := 2
 	contentHeight := m.contentHeight()
+	// errorLine が消費する行数だけペイン高さを縮める。
+	// これを忘れると総行数が m.height を超え、altscreen のカーソル確保で
+	// 画面が上にスクロールし header (textinput) が画面外に出る。
+	if errorRows > 0 {
+		contentHeight -= errorRows
+		if contentHeight < 1 {
+			contentHeight = 1
+		}
+	}
 	listWidth := m.listWidth()
 	previewWidth := m.width - listWidth - borderW*2
 	if previewWidth < 0 {

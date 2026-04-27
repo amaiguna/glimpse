@@ -128,6 +128,9 @@ func (g *GrepModel) handleDebounceTick(msg debounceTickMsg) (Pane, tea.Cmd) {
 	if g.textInput.Value() == "" {
 		g.searchCancel = nil
 		g.items = nil
+		// クエリ空 = idle 遷移なので、前回の regex エラーは陳腐化する。
+		// 一緒にクリアして UI 上に古いエラーが残らないようにする（#007 取りこぼし）。
+		g.err = nil
 		return g, nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), grepSearchTimeout)
