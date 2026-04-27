@@ -70,4 +70,8 @@ type PreviewDecorator interface {
 
 ## 優先度
 
-低 — 新モード追加時に再評価する。
+中 — [Proposal #001 (Filtered Grep)](../proposals/001-filtered-grep.md) の前提タスク。複数入力欄を持つペインへの拡張に備え、本機能着手前に分割設計を確定させる必要がある。
+
+## 関連
+
+- 前提となる proposal: [Proposal #001 Filtered Grep モードの追加](../proposals/001-filtered-grep.md) — 分割の方向性 (HeaderRenderer / Selector / PreviewDecorator) のたたき台あり
