@@ -1,6 +1,7 @@
 package finder
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -128,6 +129,32 @@ func TestCmdErrorUnwrap(t *testing.T) {
 	inner := errors.New("inner")
 	e := &CmdError{ExitCode: 2, Stderr: "x", Err: inner}
 	assert.True(t, errors.Is(e, inner))
+}
+
+// #008: boundedWriter は (i) 範囲内書き込み (ii) 上限跨ぎでの truncate (iii) 上限到達後の drop の
+// 3 分岐を持つ。stderr の真の boundary（pipe buffering の都合で実プロセス経由では踏みにくい）を
+// 直接ユニットテストで pin する。
+func TestBoundedWriter(t *testing.T) {
+	var buf bytes.Buffer
+	w := &boundedWriter{buf: &buf, max: 10}
+
+	// (i) remaining 内に収まる Write
+	n, err := w.Write([]byte("hello"))
+	require.NoError(t, err)
+	assert.Equal(t, 5, n)
+	assert.Equal(t, "hello", buf.String())
+
+	// (ii) remaining=5 に対して len=10 → 先頭 5 バイトだけ取り込む
+	n, err = w.Write([]byte("0123456789"))
+	require.NoError(t, err)
+	assert.Equal(t, 10, n, "Write 契約上は len(p) を返す（書ききった扱い）")
+	assert.Equal(t, "hello01234", buf.String())
+
+	// (iii) remaining=0 後の Write は黙ってドロップ。バッファは増えない。
+	n, err = w.Write([]byte("more"))
+	require.NoError(t, err)
+	assert.Equal(t, 4, n)
+	assert.Equal(t, "hello01234", buf.String())
 }
 
 func requireShell(t *testing.T) {
