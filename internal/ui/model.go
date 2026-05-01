@@ -323,13 +323,10 @@ func openEditorCmd(file string, line int) tea.Cmd {
 func (m Model) View() string {
 	pane := m.activePane()
 
-	// モードラベル + クエリ入力行
-	modeLabel := "Files"
-	if m.mode == ModeGrep {
-		modeLabel = "Grep"
-	}
-	// HeaderRenderer 未実装のペインは入力欄なしで描画（モードラベルのみ）。
-	// 将来 Buffer List 等で入力欄を持たないペインに備えた退路（#006）。
+	// ヘッダー: pane が提供する完成済みの行をそのまま縦に並べる（proposal #001 D-3 / D-4）。
+	// モードラベル "[Grep]" / "[Files]" や入力欄ラベル "files:" は pane が責任を持って描画し、
+	// active/inactive のスタイル切替もここに含めて返す。
+	// HeaderRenderer 未実装のペインは入力欄なしで描画（将来 Buffer List 等への退路 / #006）。
 	headerInputs := []string{""}
 	if hr, ok := pane.(HeaderRenderer); ok {
 		headerInputs = hr.HeaderViews()
@@ -339,16 +336,7 @@ func (m Model) View() string {
 	}
 	headerLines := make([]string, len(headerInputs))
 	for i, inputView := range headerInputs {
-		var line string
-		if i == 0 {
-			line = modeLabelStyle.Render("["+modeLabel+"]") + " " + inputView
-		} else {
-			// 2 行目以降はラベル位置を空白で揃え、読み手の視線を入力欄列に固定する。
-			// proposal #001 Phase 2 で include glob 用の prefix（"files: " 等）を
-			// 各ペインが先頭に含めて返す想定。ここでは余分な装飾を加えない。
-			line = strings.Repeat(" ", lipgloss.Width("["+modeLabel+"]")+1) + inputView
-		}
-		line = headerStyle.Render(line)
+		line := headerStyle.Render(inputView)
 		if m.width > 0 {
 			line = ansi.Truncate(line, m.width, "")
 		}

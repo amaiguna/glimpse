@@ -221,8 +221,14 @@ func (f *FinderModel) DecoratePreview(content string, width int) string {
 func (f *FinderModel) TextInput() textinput.Model { return f.textInput }
 
 // HeaderViews はヘッダー入力欄の View をスライスで返す（HeaderRenderer; #006）。
-// Finder は単一入力欄なので 1 要素返す。
-func (f *FinderModel) HeaderViews() []string { return []string{f.textInput.View()} }
+// Finder は単一入力欄なのでラベル "[Files]" 付きの 1 要素を返す。
+// ラベルは常に active style（modeLabelStyle）で描画する（入力欄が 1 つしかないので
+// focus 切替の概念がない）。
+func (f *FinderModel) HeaderViews() []string {
+	return []string{
+		modeLabelStyle.Render("[Files]") + " " + f.textInput.View(),
+	}
+}
 
 // PreviewRange はプレビューの表示開始行を返す。Finder は常に先頭から。
 func (f *FinderModel) PreviewRange(_ int) int { return 1 }

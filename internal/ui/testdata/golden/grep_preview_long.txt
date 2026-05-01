@@ -1,4 +1,5 @@
  [Grep] > package 
+ files: > e.g. *.go !testdata/**
 ┌──────────────────────┐┌──────────────────────────────────────────────────────┐
 │> main.go             ││line 1: some content here for testing purposes        │
 │                      ││line 2: some content here for testing purposes        │
@@ -19,5 +20,4 @@
 │                      ││line 17: some content here for testing purposes       │
 │                      ││line 18: some content here for testing purposes       │
 │                      ││line 19: some content here for testing purposes       │
-│                      ││line 20: some content here for testing purposes       │
 └──────────────────────┘└──────────────────────────────────────────────────────┘

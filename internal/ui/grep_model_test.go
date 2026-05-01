@@ -215,8 +215,10 @@ func TestGrepViewSanitizesEscapesInFilenames(t *testing.T) {
 
 	view := g.View()
 
+	// 注: lipgloss 自身が style 付与で `\x1b[0m` を吐くため、ここでは
+	// 「入力の生 SGR が payload と連続したまま残っている」ことを示すペアで判定する。
 	assert.NotContains(t, view, "\x1b[41;97m", "raw SGR escape leaked into View")
-	assert.NotContains(t, view, "\x1b[0m", "raw SGR reset leaked into View")
+	assert.NotContains(t, view, "\x1b[41;97mHIJACKED", "raw SGR + payload leaked into View")
 	assert.Contains(t, view, `\x1b[41;97m`, "サニタイズ済みの可視表現が描画される")
 	assert.Contains(t, view, "HIJACKED")
 }

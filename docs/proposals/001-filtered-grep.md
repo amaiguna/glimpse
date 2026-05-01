@@ -1,6 +1,6 @@
 # Proposal #001: Filtered Grep モードの追加
 
-**Status:** In Progress (Phase 1 完了 2026-05-01)
+**Status:** In Progress (Phase 2 完了 2026-05-01)
 
 ## 概要
 
@@ -145,15 +145,22 @@ type PreviewDecorator interface {
 **成功基準**: 既存テストすべてパス、`Pane` 本体メソッド数が 6〜8 程度に収まる。
 **結果**: Pane 本体は 6 メソッド (Update / View / Query / IsLoading / Err / SetErr)。詳細は [#006](../issues/006-pane-interface-bloat.md)。
 
-### Phase 2: include 入力欄 UI 追加
+### Phase 2: include 入力欄 UI 追加 ✅ 完了 (2026-05-01)
 
-- `GrepModel` に `includeInput textinput.Model` を追加
-- `HeaderRenderer.HeaderViews()` を 2 要素返す
-- `Shift+Tab` での 2 入力欄間 focus 移動を実装
-- レイアウト: 2 行ヘッダー対応 + grayed-out placeholder
-- include パターンは UI 状態として保持するだけで、まだ rg には渡さない (Phase 3 で接続)
+- `GrepModel` に `includeInput textinput.Model` を追加 → 完了
+- `HeaderRenderer.HeaderViews()` を 2 要素返す → 完了 (1 行目 = pattern、2 行目 = "files: " + include)
+- `Shift+Tab` での 2 入力欄間 focus 移動を実装 → 完了 (`toggleInputFocus`)
+- レイアウト: 2 行ヘッダー対応 + grayed-out placeholder → 完了 (placeholder = `"e.g. *.go !testdata/**"`)
+- include パターンは UI 状態として保持するだけで、まだ rg には渡さない → 完了 (Phase 3 で接続)
 
-**成功基準**: include 欄に文字が打てる / Shift+Tab で行き来できる / 既存 Grep 検索は変化しない。
+**成功基準**: include 欄に文字が打てる / Shift+Tab で行き来できる / 既存 Grep 検索は変化しない → 達成。
+
+**確定事項** (Phase 3 以降のために):
+- placeholder 文言: `"e.g. *.go !testdata/**"`
+- Reset 時 (Tab モード切替含む) の include 欄: クリア
+- 入力欄ラベル: 2 行目に `"files: "` プレフィックス。`"[Grep] "` と同じ 7 列幅で `>` 列が縦整列
+- include アクセサ: `GrepModel.IncludeValue() string`
+- Phase 3 で配線するときに反転させるテスト: `TestGrepIncludeInputDoesNotTriggerDebounce` の debounceTag アサーションを「進む」へ反転 + rg 引数組み立て側の `--glob` 配線テスト追加
 
 ### Phase 3: rg --glob 配線
 

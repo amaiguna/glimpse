@@ -1,7 +1,7 @@
  [Grep] > Search pattern...
+ files: > e.g. *.go !testdata/**
 error: rg: command not found
 ┌──────────────────────┐┌──────────────────────────────────────────────────────┐
-│                      ││                                                      │
 │                      ││                                                      │
 │                      ││                                                      │
 │                      ││                                                      │

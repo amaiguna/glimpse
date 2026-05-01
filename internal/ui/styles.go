@@ -22,10 +22,16 @@ var headerStyle = lipgloss.NewStyle().
 	Foreground(colorWhite).
 	PaddingLeft(1)
 
-// モードラベル
+// モードラベル（アクティブな入力欄に対応するラベル用）
 var modeLabelStyle = lipgloss.NewStyle().
 	Bold(true).
 	Foreground(colorPrimary)
+
+// 非アクティブな入力欄のラベル用（proposal #001 D-3）。
+// Shift+Tab でフォーカスが切り替わったとき、active/inactive のラベル色を
+// 入れ替えて「いまどちらの入力欄に文字が流れるか」をラベルだけで判別可能にする。
+var inactiveLabelStyle = lipgloss.NewStyle().
+	Foreground(colorSecondary)
 
 // リストペイン枠
 var listPaneStyle = lipgloss.NewStyle().

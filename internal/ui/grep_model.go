@@ -17,10 +17,24 @@ import (
 // debounceInterval は Grep モードでの入力デバウンス間隔。
 const debounceInterval = 300 * time.Millisecond
 
+// grepFocusedInput は GrepModel 内のどの入力欄にフォーカスがあるかを表す（proposal #001 Phase 2）。
+type grepFocusedInput int
+
+const (
+	// grepInputPattern は grep パターン入力欄（1 行目）にフォーカスがある状態。
+	grepInputPattern grepFocusedInput = iota
+	// grepInputInclude は include glob 入力欄（2 行目）にフォーカスがある状態。
+	grepInputInclude
+)
+
 // GrepModel はライブ grep モードのペイン。
 // rg --json をデバウンス付きで実行し、結果を表示する。
+// proposal #001 Phase 2 から「対象ファイル絞り込み (include glob)」用の第 2 入力欄を持ち、
+// Shift+Tab で 2 入力欄間の focus を移動できる。
 type GrepModel struct {
-	textInput        textinput.Model
+	textInput        textinput.Model // grep パターン入力欄
+	includeInput     textinput.Model // include glob 入力欄（proposal #001）
+	focusedInput     grepFocusedInput
 	items            []string // "file:line:text" 形式
 	cursor           int
 	offset           int // スクロールオフセット（表示先頭行）
@@ -35,14 +49,26 @@ type GrepModel struct {
 	searchCancel context.CancelFunc
 }
 
+// includeInputPlaceholder は include glob 入力欄の placeholder 文言（proposal #001 D-4）。
+// glob の書式例を示すことで「機能の存在 = 何を入れていいか」が UI 上で discover できる。
+// "files: " ラベルは HeaderViews 側で別途付加するため、ここには含めない。
+const includeInputPlaceholder = "e.g. *.go !testdata/**"
+
 // NewGrepModel は GrepModel を初期化して返す。
 func NewGrepModel() *GrepModel {
 	ti := textinput.New()
 	ti.Placeholder = "Search pattern..."
 	ti.Focus()
 	ti.CharLimit = 256
+
+	include := textinput.New()
+	include.Placeholder = includeInputPlaceholder
+	include.CharLimit = 256
+
 	return &GrepModel{
-		textInput: ti,
+		textInput:    ti,
+		includeInput: include,
+		focusedInput: grepInputPattern,
 	}
 }
 
@@ -100,8 +126,19 @@ func (g *GrepModel) handleKey(msg tea.KeyMsg) (Pane, tea.Cmd) {
 			g.clampOffset()
 		}
 		return g, nil
+	case tea.KeyShiftTab:
+		// proposal #001 D-3: Shift+Tab で pattern ↔ include 入力欄の focus を移動。
+		// グローバル Tab (モード切替) はそのまま温存し、ペイン内の局所遷移として扱う。
+		return g.toggleInputFocus()
 	default:
-		// テキスト入力は textinput に委譲
+		// テキスト入力は focus 中の入力欄に委譲。
+		// include への入力は Phase 2 では UI 状態保持のみで rg を発火しない。
+		// Phase 3 で配線するときに include 入力でも debounceTag を進めるよう拡張する。
+		if g.focusedInput == grepInputInclude {
+			var cmd tea.Cmd
+			g.includeInput, cmd = g.includeInput.Update(msg)
+			return g, cmd
+		}
 		prevQuery := g.textInput.Value()
 		var cmd tea.Cmd
 		g.textInput, cmd = g.textInput.Update(msg)
@@ -115,6 +152,22 @@ func (g *GrepModel) handleKey(msg tea.KeyMsg) (Pane, tea.Cmd) {
 		}
 		return g, cmd
 	}
+}
+
+// toggleInputFocus は pattern ↔ include の focus を切り替える（proposal #001 D-3）。
+// 非アクティブ側は Blur してカーソル/カーソル点滅を消し、
+// アクティブ側のみが文字入力を受ける状態にする。
+func (g *GrepModel) toggleInputFocus() (Pane, tea.Cmd) {
+	if g.focusedInput == grepInputPattern {
+		g.textInput.Blur()
+		cmd := g.includeInput.Focus()
+		g.focusedInput = grepInputInclude
+		return g, cmd
+	}
+	g.includeInput.Blur()
+	cmd := g.textInput.Focus()
+	g.focusedInput = grepInputPattern
+	return g, cmd
 }
 
 func (g *GrepModel) handleDebounceTick(msg debounceTickMsg) (Pane, tea.Cmd) {
@@ -278,10 +331,31 @@ func (g *GrepModel) DecoratePreview(content string, width int) string {
 // TextInput は入力欄のモデルを返す。
 func (g *GrepModel) TextInput() textinput.Model { return g.textInput }
 
-// HeaderViews はヘッダー入力欄の View をスライスで返す（HeaderRenderer; #006）。
-// 現状 Grep は単一入力欄なので 1 要素返す。proposal #001 Phase 2 で
-// include glob 入力欄を追加する際に 2 要素を返すよう拡張される。
-func (g *GrepModel) HeaderViews() []string { return []string{g.textInput.View()} }
+// HeaderViews はヘッダー入力欄の View をスライスで返す（HeaderRenderer; #006 / proposal #001 Phase 2）。
+// 1 行目: "[Grep]" ラベル + pattern 入力欄。2 行目: "files:" ラベル + include glob 入力欄。
+// 2 つのラベル "[Grep]" と "files:" は同じ 7 列幅にすることで `>` 列を縦に整列させる
+// （proposal #001 D-4 のレイアウト）。
+//
+// proposal #001 D-3: focus 中の入力欄ラベルだけを active style (modeLabelStyle) で描画し、
+// 非 focus 側は inactiveLabelStyle (dim) にする。Shift+Tab でハイライトが入れ替わるため、
+// ラベルだけ見て「いまどちらに文字が流れるか」が判別できる。
+func (g *GrepModel) HeaderViews() []string {
+	patternLabel := inactiveLabelStyle.Render("[Grep]")
+	includeLabel := inactiveLabelStyle.Render("files:")
+	if g.focusedInput == grepInputPattern {
+		patternLabel = modeLabelStyle.Render("[Grep]")
+	} else {
+		includeLabel = modeLabelStyle.Render("files:")
+	}
+	return []string{
+		patternLabel + " " + g.textInput.View(),
+		includeLabel + " " + g.includeInput.View(),
+	}
+}
+
+// IncludeValue は include glob 入力欄の現在値を返す（proposal #001）。
+// Phase 2 では UI 状態の参照のみ。Phase 3 で rg --glob 引数組み立てに使う。
+func (g *GrepModel) IncludeValue() string { return g.includeInput.Value() }
 
 // OpenTarget はエディタで開く対象を返す。Grep は "file:line:text" からファイルと行番号を抽出する。
 func (g *GrepModel) OpenTarget() (string, int) {
@@ -294,26 +368,39 @@ func (g *GrepModel) OpenTarget() (string, int) {
 
 // Reset はモード切替時にペインの状態をリセットする。
 // 進行中の rg 検索があれば cancel してプロセスを回収する（M-3）。
+// proposal #001 Phase 2: include 入力欄も同時にクリアし、focus を pattern に戻す
+// （"Reset 時の include 欄保持: 残さない" 決定）。
 func (g *GrepModel) Reset() {
 	if g.searchCancel != nil {
 		g.searchCancel()
 		g.searchCancel = nil
 	}
 	g.textInput.SetValue("")
+	g.includeInput.SetValue("")
 	g.cursor = 0
 	g.offset = 0
 	g.items = nil
 	g.err = nil
+	g.focusedInput = grepInputPattern
+	g.includeInput.Blur()
+	g.textInput.Focus()
 }
 
 // Focus はテキスト入力にフォーカスを当てる。
+// proposal #001 Phase 2: 常に pattern 入力欄に focus を戻す。
+// モード切替で再度 Grep に入った際の起点を pattern に固定する。
 func (g *GrepModel) Focus() tea.Cmd {
+	g.includeInput.Blur()
+	g.focusedInput = grepInputPattern
 	return g.textInput.Focus()
 }
 
 // Blur はテキスト入力のフォーカスを外す。
+// proposal #001 Phase 2: pattern と include の両方を blur し、
+// モード切替後にカーソル点滅が画面外に残らないようにする。
 func (g *GrepModel) Blur() {
 	g.textInput.Blur()
+	g.includeInput.Blur()
 }
 
 // simplifyGrepError は UI 表示用にエラーメッセージを整形する（#007）。

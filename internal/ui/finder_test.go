@@ -167,6 +167,8 @@ func TestFinderView(t *testing.T) {
 
 // H-2 回帰: ファイル名にエスケープシーケンスが含まれていても、
 // View 出力には生の ESC バイトが残らないこと。
+// 注: lipgloss 自身も style 付与のため `\x1b[0m` を吐くので、ここでは
+// 「入力の生 SGR が連続して残っている」ことを示すペア (例: `[41;97mHIJACKED`) で判定する。
 func TestFinderViewSanitizesEscapesInFilenames(t *testing.T) {
 	evilName := "name_\x1b[41;97mHIJACKED\x1b[0m_.txt"
 	f := NewFinderModel()
@@ -178,7 +180,7 @@ func TestFinderViewSanitizesEscapesInFilenames(t *testing.T) {
 	view := f.View()
 
 	assert.NotContains(t, view, "\x1b[41;97m", "raw SGR escape leaked into View")
-	assert.NotContains(t, view, "\x1b[0m", "raw SGR reset leaked into View")
+	assert.NotContains(t, view, "\x1b[41;97mHIJACKED", "raw SGR + payload leaked into View")
 	// 可視化された安全表現は残る
 	assert.Contains(t, view, `\x1b[41;97m`)
 	assert.Contains(t, view, "HIJACKED")
