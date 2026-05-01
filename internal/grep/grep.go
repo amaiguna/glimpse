@@ -209,12 +209,29 @@ func Search(ctx context.Context, pattern string, globs []string) ([]Match, error
 			return nil, ctxErr
 		}
 		var cmdErr *CmdError
-		if errors.As(err, &cmdErr) && cmdErr.ExitCode == 1 {
-			return nil, nil
+		if errors.As(err, &cmdErr) {
+			if cmdErr.ExitCode == 1 {
+				return nil, nil
+			}
+			// proposal #001 Phase 4 ポリッシュ: include glob が全ファイルを除外した場合
+			// rg は exit 2 + 「No files were searched, ...」の警告を返す。
+			// これは UX 上「マッチなし」と意味的に同じなので、エラーとして surface せず
+			// 空結果として扱う。Stderr 文字列で判定するため exit code は問わない
+			// (rg のバージョン差で exit 1 / 2 のどちらでも吸収する)。
+			if isNoFilesSearchedWarning(cmdErr.Stderr) {
+				return nil, nil
+			}
 		}
 		return nil, err
 	}
 	return ParseRgJSON(string(out))
+}
+
+// isNoFilesSearchedWarning は rg の「No files were searched」警告を検出する。
+// include glob で全ファイルが弾かれたとき rg がこのメッセージを stderr に出す。
+// メッセージ全文は rg バージョンによって細部が変わるため、安定するキーフレーズだけで判定する。
+func isNoFilesSearchedWarning(stderr string) bool {
+	return strings.Contains(stderr, "No files were searched")
 }
 
 // buildSearchArgs は rg の引数列を構築する (proposal #001 Phase 3)。

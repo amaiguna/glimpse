@@ -348,6 +348,47 @@ func TestSearchExitCode1IsNoMatch(t *testing.T) {
 	assert.Nil(t, matches)
 }
 
+// proposal #001 Phase 4 ポリッシュ: include glob が全ファイルを除外したとき
+// rg は exit 2 + 「No files were searched, ...」の警告を吐くが、UX 上は
+// 「マッチなし」と同等として扱う。Search は nil, nil を返してエラー表示しない。
+func TestSearchTreatsNoFilesSearchedWarningAsNoMatch(t *testing.T) {
+	requireShell(t)
+	orig := rgBinary
+	t.Cleanup(func() { rgBinary = orig })
+
+	dir := t.TempDir()
+	fake := filepath.Join(dir, "rg")
+	err := writeExecutable(fake,
+		"#!/bin/sh\n"+
+			"echo 'rg: No files were searched, which means ripgrep probably applied a filter you did not expect.' >&2\n"+
+			"echo 'Running with --debug will show why files are being skipped.' >&2\n"+
+			"exit 2\n")
+	require.NoError(t, err)
+	rgBinary = fake
+
+	matches, err := Search(context.Background(), "anything", []string{"*nonexistent*"})
+	require.NoError(t, err, "include glob 過剰絞り込みは UX 上 no-match と同等扱い")
+	assert.Nil(t, matches, "no-match なので空")
+}
+
+// 上記 no-files-searched 判定が「stderr に当該文字列を含む」だけで真になり、
+// 別の本物のエラー (regex parse error 等) を握りつぶさないこと。
+func TestSearchKeepsRealErrorsEvenWhenStderrHasOtherText(t *testing.T) {
+	requireShell(t)
+	orig := rgBinary
+	t.Cleanup(func() { rgBinary = orig })
+
+	dir := t.TempDir()
+	fake := filepath.Join(dir, "rg")
+	err := writeExecutable(fake,
+		"#!/bin/sh\necho 'regex parse error: unclosed character class' >&2\nexit 2\n")
+	require.NoError(t, err)
+	rgBinary = fake
+
+	_, err = Search(context.Background(), "[", nil)
+	require.Error(t, err, "no-files-searched 以外の exit 2 はエラーとして surface する")
+}
+
 // #008: rg が exit code 2 + stderr を返すケースで、Search はそれを CmdError として伝搬する。
 func TestSearchExitCode2PropagatesCmdError(t *testing.T) {
 	requireShell(t)

@@ -194,6 +194,7 @@ type PreviewDecorator interface {
 - ヘルプ表示 (`?` キー検討) でのキーバインド説明
 - include の不正な glob → エラー表示は #007 と同じステータス行ルートに乗せる (rg が stderr を返してくれる)
 - 必要に応じて `Ctrl+I` を Shift+Tab の別名として追加
+- ✅ (2026-05-01) include glob が全ファイル除外したときの rg 警告 (`No files were searched, ...`) を no-match 扱いに握りつぶす (`isNoFilesSearchedWarning`)。rg バージョン差で exit 1 / 2 のどちらでも吸収する
 
 ## 未確定事項 / 要再考点
 
