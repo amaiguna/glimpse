@@ -1,6 +1,6 @@
 # Proposal #001: Filtered Grep モードの追加
 
-**Status:** Approved (2026-04-27)
+**Status:** In Progress (Phase 1 完了 2026-05-01)
 
 ## 概要
 
@@ -134,15 +134,16 @@ type PreviewDecorator interface {
 
 ## 段階的ロードマップ
 
-### Phase 1: #006 解消 — Pane インターフェース再設計
+### Phase 1: #006 解消 — Pane インターフェース再設計 ✅ 完了 (2026-05-01)
 
 **前提**: 本提案。スコープ:
 
-- Pane を上記方向性で分割
-- 既存 Finder / Grep の挙動を維持しつつ親 Model 側を型アサーション化
-- ゴールデンテスト・シナリオテストでの非後退を担保
+- Pane を上記方向性で分割 → 完了 (Pane / HeaderRenderer / Selector / PreviewDecorator)
+- 既存 Finder / Grep の挙動を維持しつつ親 Model 側を型アサーション化 → 完了
+- ゴールデンテスト・シナリオテストでの非後退を担保 → 完了 (golden 差分ゼロ、fuzz panic なし)
 
 **成功基準**: 既存テストすべてパス、`Pane` 本体メソッド数が 6〜8 程度に収まる。
+**結果**: Pane 本体は 6 メソッド (Update / View / Query / IsLoading / Err / SetErr)。詳細は [#006](../issues/006-pane-interface-bloat.md)。
 
 ### Phase 2: include 入力欄 UI 追加
 

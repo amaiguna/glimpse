@@ -204,9 +204,13 @@ func (m Model) switchMode() (tea.Model, tea.Cmd) {
 }
 
 // handleEnter は選択アイテムでエディタを起動する。
+// Selector ロールを実装しないペインは Enter を no-op として扱う（#006）。
 func (m Model) handleEnter() (tea.Model, tea.Cmd) {
-	pane := m.activePane()
-	file, line := pane.OpenTarget()
+	sel, ok := m.activePane().(Selector)
+	if !ok {
+		return m, nil
+	}
+	file, line := sel.OpenTarget()
 	if file == "" {
 		return m, nil
 	}
@@ -243,9 +247,17 @@ func (m *Model) updatePaneSizes() {
 
 // previewCmd は現在のアクティブペインのファイルパスに基づいてプレビュー読み込みの Cmd を返す。
 // ファイルパスまたは表示開始行が変わっていない場合は Cmd を発行しない。
+// Selector / PreviewDecorator を実装しないペインはプレビュー機能なしとして扱う（#006）。
 func (m *Model) previewCmd() tea.Cmd {
 	pane := m.activePane()
-	filePath := pane.FilePath()
+	sel, ok := pane.(Selector)
+	if !ok {
+		m.previewContent = ""
+		m.previewPath = ""
+		m.previewStartLine = 0
+		return nil
+	}
+	filePath := sel.FilePath()
 	if filePath == "" {
 		m.previewContent = ""
 		m.previewPath = ""
@@ -253,7 +265,10 @@ func (m *Model) previewCmd() tea.Cmd {
 		return nil
 	}
 	visibleHeight := m.contentHeight()
-	startLine := pane.PreviewRange(visibleHeight)
+	startLine := 1
+	if dec, ok := pane.(PreviewDecorator); ok {
+		startLine = dec.PreviewRange(visibleHeight)
+	}
 	if filePath == m.previewPath && startLine == m.previewStartLine {
 		return nil
 	}
@@ -313,12 +328,33 @@ func (m Model) View() string {
 	if m.mode == ModeGrep {
 		modeLabel = "Grep"
 	}
-	inputView := pane.TextInputView()
-	headerText := modeLabelStyle.Render("["+modeLabel+"]") + " " + inputView
-	header := headerStyle.Render(headerText)
-	if m.width > 0 {
-		header = ansi.Truncate(header, m.width, "")
+	// HeaderRenderer 未実装のペインは入力欄なしで描画（モードラベルのみ）。
+	// 将来 Buffer List 等で入力欄を持たないペインに備えた退路（#006）。
+	headerInputs := []string{""}
+	if hr, ok := pane.(HeaderRenderer); ok {
+		headerInputs = hr.HeaderViews()
 	}
+	if len(headerInputs) == 0 {
+		headerInputs = []string{""}
+	}
+	headerLines := make([]string, len(headerInputs))
+	for i, inputView := range headerInputs {
+		var line string
+		if i == 0 {
+			line = modeLabelStyle.Render("["+modeLabel+"]") + " " + inputView
+		} else {
+			// 2 行目以降はラベル位置を空白で揃え、読み手の視線を入力欄列に固定する。
+			// proposal #001 Phase 2 で include glob 用の prefix（"files: " 等）を
+			// 各ペインが先頭に含めて返す想定。ここでは余分な装飾を加えない。
+			line = strings.Repeat(" ", lipgloss.Width("["+modeLabel+"]")+1) + inputView
+		}
+		line = headerStyle.Render(line)
+		if m.width > 0 {
+			line = ansi.Truncate(line, m.width, "")
+		}
+		headerLines[i] = line
+	}
+	header := strings.Join(headerLines, "\n")
 
 	// エラーはステータス行として header 直下に出す（#009）。
 	// 早期 return をせず通常レイアウトを維持し、修正のためのキー入力を続けられるようにする。
@@ -336,14 +372,18 @@ func (m Model) View() string {
 	borderH := 2
 	borderW := 2
 	contentHeight := m.contentHeight()
-	// errorLine が消費する行数だけペイン高さを縮める。
+	// header が複数行になった分とエラー行の分だけペイン高さを縮める。
 	// これを忘れると総行数が m.height を超え、altscreen のカーソル確保で
 	// 画面が上にスクロールし header (textinput) が画面外に出る。
+	extraHeaderLines := len(headerLines) - 1
+	if extraHeaderLines > 0 {
+		contentHeight -= extraHeaderLines
+	}
 	if errorRows > 0 {
 		contentHeight -= errorRows
-		if contentHeight < 1 {
-			contentHeight = 1
-		}
+	}
+	if contentHeight < 1 {
+		contentHeight = 1
 	}
 	listWidth := m.listWidth()
 	previewWidth := m.width - listWidth - borderW*2
@@ -359,7 +399,8 @@ func (m Model) View() string {
 		MaxHeight(contentHeight + borderH).
 		Render(pane.View())
 
-	// プレビューコンテンツを表示サイズに切り詰め + ペイン固有の装飾
+	// プレビューコンテンツを表示サイズに切り詰め + ペイン固有の装飾。
+	// PreviewDecorator 未実装のペインは無装飾で素通し（#006）。
 	previewText := m.previewContent
 	if previewText != "" {
 		lines := strings.Split(previewText, "\n")
@@ -370,7 +411,9 @@ func (m Model) View() string {
 			lines[i] = ansi.Truncate(line, previewWidth, "")
 		}
 		previewText = strings.Join(lines, "\n")
-		previewText = pane.DecoratePreview(previewText, previewWidth)
+		if dec, ok := pane.(PreviewDecorator); ok {
+			previewText = dec.DecoratePreview(previewText, previewWidth)
+		}
 	}
 
 	rightPane := previewPaneStyle.

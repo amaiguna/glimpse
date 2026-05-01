@@ -278,8 +278,10 @@ func (g *GrepModel) DecoratePreview(content string, width int) string {
 // TextInput は入力欄のモデルを返す。
 func (g *GrepModel) TextInput() textinput.Model { return g.textInput }
 
-// TextInputView はヘッダー用テキスト入力の View 文字列を返す。
-func (g *GrepModel) TextInputView() string { return g.textInput.View() }
+// HeaderViews はヘッダー入力欄の View をスライスで返す（HeaderRenderer; #006）。
+// 現状 Grep は単一入力欄なので 1 要素返す。proposal #001 Phase 2 で
+// include glob 入力欄を追加する際に 2 要素を返すよう拡張される。
+func (g *GrepModel) HeaderViews() []string { return []string{g.textInput.View()} }
 
 // OpenTarget はエディタで開く対象を返す。Grep は "file:line:text" からファイルと行番号を抽出する。
 func (g *GrepModel) OpenTarget() (string, int) {

@@ -220,8 +220,9 @@ func (f *FinderModel) DecoratePreview(content string, width int) string {
 // TextInput は入力欄のモデルを返す。
 func (f *FinderModel) TextInput() textinput.Model { return f.textInput }
 
-// TextInputView はヘッダー用テキスト入力の View 文字列を返す。
-func (f *FinderModel) TextInputView() string { return f.textInput.View() }
+// HeaderViews はヘッダー入力欄の View をスライスで返す（HeaderRenderer; #006）。
+// Finder は単一入力欄なので 1 要素返す。
+func (f *FinderModel) HeaderViews() []string { return []string{f.textInput.View()} }
 
 // PreviewRange はプレビューの表示開始行を返す。Finder は常に先頭から。
 func (f *FinderModel) PreviewRange(_ int) int { return 1 }
