@@ -80,9 +80,10 @@ const grepSearchTimeout = 10 * time.Second
 // ctx のキャンセルで古い rg プロセスを kill し stdout の溜め込みを防ぐ（M-3）。
 // キャンセル（context.Canceled）は新しい検索で上書き中なので UI に伝えず無視する。
 // DeadlineExceeded は明示的なタイムアウトなのでエラー表示する。
-func runGrepCmd(ctx context.Context, pattern string) tea.Cmd {
+// globs は include 入力欄から expandIncludePatterns で展開されたもの（proposal #001 Phase 3）。
+func runGrepCmd(ctx context.Context, pattern string, globs []string) tea.Cmd {
 	return func() tea.Msg {
-		matches, err := grep.Search(ctx, pattern)
+		matches, err := grep.Search(ctx, pattern, globs)
 		if errors.Is(err, context.Canceled) {
 			return nil
 		}
@@ -91,6 +92,42 @@ func runGrepCmd(ctx context.Context, pattern string) tea.Cmd {
 		}
 		return GrepDoneMsg{Matches: matches}
 	}
+}
+
+// includeGlobMetaChars は glob メタ文字の判定に使う文字集合（proposal #001 D-2 補足）。
+// この集合のいずれかを含むトークンは「ユーザが意図的に glob を書いた」と見なし、
+// substring 自動 wrap を skip する。
+//
+//   - '*' '?' : ワイルドカード
+//   - '['     : 文字クラス
+//   - '!'     : 否定 (gitignore 形式の negative glob)
+const includeGlobMetaChars = "*?[!"
+
+// expandIncludePatterns は include 入力欄の値を rg --glob トークンに分解する
+// （proposal #001 Phase 3 / D-2 補足）。
+//
+// proposal D-2 は当初 pure glob を採用していたが、「CLAUDE と打ったら CLAUDE.md にヒット」
+// という直観的な substring 体験が UX 上必要だったため、以下のルールで補助する:
+//
+//   - 空白で split (空文字列・空白のみは nil)
+//   - 各トークンが glob メタ文字 (* ? [ !) を含む  → そのまま渡す (例: "*.go", "!testdata/**")
+//   - 含まない                                     → "*token*" に wrap (例: "CLAUDE" → "*CLAUDE*")
+//
+// glob 表現を意識して書いたユーザは挙動を変えず、何も知らないユーザは substring で動く。
+func expandIncludePatterns(value string) []string {
+	fields := strings.Fields(value)
+	if len(fields) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(fields))
+	for _, f := range fields {
+		if strings.ContainsAny(f, includeGlobMetaChars) {
+			out = append(out, f)
+		} else {
+			out = append(out, "*"+f+"*")
+		}
+	}
+	return out
 }
 
 func (g *GrepModel) Update(msg tea.Msg) (Pane, tea.Cmd) {
@@ -132,26 +169,36 @@ func (g *GrepModel) handleKey(msg tea.KeyMsg) (Pane, tea.Cmd) {
 		return g.toggleInputFocus()
 	default:
 		// テキスト入力は focus 中の入力欄に委譲。
-		// include への入力は Phase 2 では UI 状態保持のみで rg を発火しない。
-		// Phase 3 で配線するときに include 入力でも debounceTag を進めるよう拡張する。
+		// proposal #001 Phase 3: pattern / include どちらの入力でも debounce を発火させる。
+		// 値が変わらないキー (矢印は別 case で処理済み、Home/End 等) では debounce を起こさない。
 		if g.focusedInput == grepInputInclude {
+			prev := g.includeInput.Value()
 			var cmd tea.Cmd
 			g.includeInput, cmd = g.includeInput.Update(msg)
+			if g.includeInput.Value() != prev {
+				return g, tea.Batch(cmd, g.scheduleDebounce())
+			}
 			return g, cmd
 		}
 		prevQuery := g.textInput.Value()
 		var cmd tea.Cmd
 		g.textInput, cmd = g.textInput.Update(msg)
 		if g.textInput.Value() != prevQuery {
-			g.debounceTag++
-			tag := g.debounceTag
-			debounceCmd := tea.Tick(debounceInterval, func(time.Time) tea.Msg {
-				return debounceTickMsg{tag: tag}
-			})
-			return g, tea.Batch(cmd, debounceCmd)
+			return g, tea.Batch(cmd, g.scheduleDebounce())
 		}
 		return g, cmd
 	}
+}
+
+// scheduleDebounce は debounce タイマーを 1 つ発火させる Cmd を返す（proposal #001 Phase 3）。
+// debounceTag をインクリメントして「最新だけ走らせる」契約を保つ。
+// pattern / include どちらの入力でも共通に呼び出す共通化。
+func (g *GrepModel) scheduleDebounce() tea.Cmd {
+	g.debounceTag++
+	tag := g.debounceTag
+	return tea.Tick(debounceInterval, func(time.Time) tea.Msg {
+		return debounceTickMsg{tag: tag}
+	})
 }
 
 // toggleInputFocus は pattern ↔ include の focus を切り替える（proposal #001 D-3）。
@@ -189,7 +236,8 @@ func (g *GrepModel) handleDebounceTick(msg debounceTickMsg) (Pane, tea.Cmd) {
 	ctx, cancel := context.WithTimeout(context.Background(), grepSearchTimeout)
 	g.searchCancel = cancel
 	g.loading = true
-	return g, runGrepCmd(ctx, g.textInput.Value())
+	globs := expandIncludePatterns(g.includeInput.Value())
+	return g, runGrepCmd(ctx, g.textInput.Value(), globs)
 }
 
 // clampOffset はカーソルが表示範囲内に収まるよう offset を調整する。

@@ -183,9 +183,53 @@ func TestSearchReturnsErrorWhenBinaryMissing(t *testing.T) {
 	rgBinary = ""
 	defer func() { rgBinary = orig }()
 
-	_, err := Search(context.Background(), "anything")
+	_, err := Search(context.Background(), "anything", nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "rg")
+}
+
+// proposal #001 Phase 3: globs を渡すと "--glob <pat>" が pattern より前に
+// 1 つずつ展開される。順序は呼び出し側が指定したまま保つ (rg は include glob を
+// 後から後勝ちで評価するため、ユーザーの入力順を尊重する)。
+func TestBuildSearchArgs(t *testing.T) {
+	tests := []struct {
+		name    string
+		pattern string
+		globs   []string
+		want    []string
+	}{
+		{
+			name:    "no globs",
+			pattern: "func",
+			globs:   nil,
+			want:    []string{"--json", "func"},
+		},
+		{
+			name:    "single glob",
+			pattern: "func",
+			globs:   []string{"*.go"},
+			want:    []string{"--json", "--glob", "*.go", "func"},
+		},
+		{
+			name:    "multiple globs preserve order",
+			pattern: "TODO",
+			globs:   []string{"*.go", "*.md", "!testdata/**"},
+			want:    []string{"--json", "--glob", "*.go", "--glob", "*.md", "--glob", "!testdata/**", "TODO"},
+		},
+		{
+			name:    "empty globs slice equivalent to nil",
+			pattern: "x",
+			globs:   []string{},
+			want:    []string{"--json", "x"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildSearchArgs(tt.pattern, tt.globs)
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }
 
 // #008: CmdError は非0終了時の構造化情報を保持し、Error() に stderr を
@@ -299,7 +343,7 @@ func TestSearchExitCode1IsNoMatch(t *testing.T) {
 	require.NoError(t, err)
 	rgBinary = fake
 
-	matches, err := Search(context.Background(), "anything")
+	matches, err := Search(context.Background(), "anything", nil)
 	require.NoError(t, err)
 	assert.Nil(t, matches)
 }
@@ -316,7 +360,7 @@ func TestSearchExitCode2PropagatesCmdError(t *testing.T) {
 	require.NoError(t, err)
 	rgBinary = fake
 
-	_, err = Search(context.Background(), "[")
+	_, err = Search(context.Background(), "[", nil)
 	require.Error(t, err)
 	var cmdErr *CmdError
 	require.ErrorAs(t, err, &cmdErr)

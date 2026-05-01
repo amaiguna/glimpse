@@ -21,7 +21,7 @@ func TestSearchContextCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // 事前にキャンセル
 
-	_, err := Search(ctx, "anything")
+	_, err := Search(ctx, "anything", nil)
 	require.Error(t, err, "キャンセル済み ctx では Search はエラーを返す")
 }
 
@@ -30,7 +30,7 @@ func TestSearchContextDeadlineExceeded(t *testing.T) {
 	defer cancel()
 	time.Sleep(1 * time.Millisecond) // deadline 確実に超過させる
 
-	_, err := Search(ctx, "anything")
+	_, err := Search(ctx, "anything", nil)
 	require.Error(t, err)
 	// 厳密な種別はプラットフォーム依存なので包含関係は問わない
 	_ = errors.Is(err, context.DeadlineExceeded)
@@ -48,7 +48,7 @@ func TestSearchNormalContext(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	matches, err := Search(ctx, "hello")
+	matches, err := Search(ctx, "hello", nil)
 	require.NoError(t, err)
 	assert.Len(t, matches, 1)
 	assert.Equal(t, "hello world", matches[0].Text)

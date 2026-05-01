@@ -1,6 +1,6 @@
 # Proposal #001: Filtered Grep モードの追加
 
-**Status:** In Progress (Phase 2 完了 2026-05-01)
+**Status:** In Progress (Phase 3 完了 2026-05-01)
 
 ## 概要
 
@@ -56,6 +56,21 @@
 #### 複数パターンの分離
 
 1 行入力欄で複数 glob を渡したいケース (例: `*.go *.md`)。**仮決定**: 空白区切りで split し、それぞれを `--glob` として rg に渡す。空白を含むパターン (実用上ほぼ無い) は対象外。要再考点として Phase 3 でユーザフィードバックを受けて確定する。
+
+#### D-2 補足: substring 自動 wrap (2026-05-01 確定)
+
+Phase 3 実装後の実機評価で、proposal が当初不採用にした (b) fuzzy ほどの自由度は不要なものの、`CLAUDE` と打って `CLAUDE.md` をフィルタしたいような **直観的な substring 体験** が UX 上必要と判明。pure glob だと `*CLAUDE*` を毎回入力する必要があり摩擦が大きい。
+
+**確定ルール** (`expandIncludePatterns`):
+- 空白区切りで split
+- 各トークンが glob メタ文字 (`*` `?` `[` `!`) を **含まない**  → `*token*` に自動 wrap (substring)
+- 含む  → そのまま渡す (例: `*.go`, `!testdata/**`, `[abc].go`)
+
+これにより:
+- 何も知らないユーザは substring で動く (`CLAUDE` → `CLAUDE.md`)
+- glob を意識して書いたユーザの挙動は変わらない (`*.go` はそのまま `*.go`)
+
+placeholder の `e.g. *.go !testdata/**` は引き続き glob 書式の discover を担う。
 
 ### D-3. キーバインド: Tab 循環は維持、Shift+Tab で入力欄間移動
 
@@ -162,15 +177,17 @@ type PreviewDecorator interface {
 - include アクセサ: `GrepModel.IncludeValue() string`
 - Phase 3 で配線するときに反転させるテスト: `TestGrepIncludeInputDoesNotTriggerDebounce` の debounceTag アサーションを「進む」へ反転 + rg 引数組み立て側の `--glob` 配線テスト追加
 
-### Phase 3: rg --glob 配線
+### Phase 3: rg --glob 配線 ✅ 完了 (2026-05-01)
 
-- include の入力値を空白で split し、各トークンを `--glob` 引数として rg に渡す
-- 空白区切り仕様は doc に明記
-- 既存 debounce タイミングに include の変更も乗せる (どちらの入力欄でも 300ms デバウンス → 検索発火)
+- include の入力値を空白で split し、各トークンを `--glob` 引数として rg に渡す → 完了 (`expandIncludePatterns` + `buildSearchArgs`)
+- 空白区切り仕様は doc に明記 → 完了 (D-2 補足)
+- 既存 debounce タイミングに include の変更も乗せる → 完了 (`scheduleDebounce` に共通化)
+- substring 自動 wrap (D-2 補足) → 完了
 
 **成功基準**:
-- include 欄に `*.go` を入れて grep すると `.go` ファイルだけがヒット
-- include 欄に `!testdata/**` を入れると `testdata` 配下が除外される
+- include 欄に `*.go` を入れて grep すると `.go` ファイルだけがヒット → 達成
+- include 欄に `!testdata/**` を入れると `testdata` 配下が除外される → 達成
+- 追加: include 欄に `CLAUDE` (glob メタなし) を入れると `*CLAUDE*` に展開され `CLAUDE.md` がヒット → 達成
 
 ### Phase 4: ポリッシュ
 

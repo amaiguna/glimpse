@@ -189,11 +189,15 @@ type rgMatch struct {
 // ctx のキャンセル/タイムアウトは rg プロセスに伝播し、呼び出し側は
 // 古いデバウンスをキャンセルして stdout の溜め込みを防げる。
 // stdout は MaxCmdOutputSize で打ち切られ、超過時は ErrOutputTooLarge を返す（I-1）。
-func Search(ctx context.Context, pattern string) ([]Match, error) {
+//
+// globs は rg の --glob オプションに 1 対 1 で展開される (proposal #001 Phase 3)。
+// 例: globs=["*.go", "!testdata/**"] → "rg --json --glob *.go --glob !testdata/** <pattern>"。
+// nil/空スライスのときは --glob を一切渡さず従来通り全ファイルが対象。
+func Search(ctx context.Context, pattern string, globs []string) ([]Match, error) {
 	if rgBinary == "" {
 		return nil, errors.New("rg: executable not found in $PATH")
 	}
-	cmd := exec.CommandContext(ctx, rgBinary, "--json", pattern)
+	cmd := exec.CommandContext(ctx, rgBinary, buildSearchArgs(pattern, globs)...)
 	cmd.Env = whitelistedEnv()
 
 	out, err := runWithLimit(cmd, MaxCmdOutputSize)
@@ -211,6 +215,20 @@ func Search(ctx context.Context, pattern string) ([]Match, error) {
 		return nil, err
 	}
 	return ParseRgJSON(string(out))
+}
+
+// buildSearchArgs は rg の引数列を構築する (proposal #001 Phase 3)。
+// "--json" → 各 "--glob <pat>" → pattern の順序で並べる。
+// テスト容易性 + Phase 3 の auto-wrap ロジック (UI 側の expandIncludePatterns) と
+// rg 側の引数組み立てを分離する目的で Search から切り出した。
+func buildSearchArgs(pattern string, globs []string) []string {
+	args := make([]string, 0, 2+2*len(globs))
+	args = append(args, "--json")
+	for _, g := range globs {
+		args = append(args, "--glob", g)
+	}
+	args = append(args, pattern)
+	return args
 }
 
 // ParseRgJSON は rg --json の出力文字列をパースし、マッチ行のみを抽出する。

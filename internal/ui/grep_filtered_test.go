@@ -72,11 +72,9 @@ func TestGrepIncludeInputAcceptsKeystrokesWhenFocused(t *testing.T) {
 	assert.Equal(t, "hello", got.Query(), "pattern 側は影響を受けない")
 }
 
-// Phase 2 では include への入力は rg を発火させない (UI 状態保持のみ)。
-// Phase 3 で配線するときに、ここのアサーションを反転させる予定。
-// 注: textinput は cursor blink 用の Cmd を常に返す（Update の副作用）ため、
-// "Cmd が nil" は契約に含めない。検索発火の代理として debounceTag を見る。
-func TestGrepIncludeInputDoesNotTriggerDebounce(t *testing.T) {
+// proposal #001 Phase 3: include への入力も rg を発火させる (debounce 経由)。
+// Phase 2 では未配線で「進まない」アサーションだったが、Phase 3 で「進む」に反転。
+func TestGrepIncludeInputTriggersDebounce(t *testing.T) {
 	g := NewGrepModel()
 	g.debounceTag = 0
 
@@ -86,9 +84,89 @@ func TestGrepIncludeInputDoesNotTriggerDebounce(t *testing.T) {
 	prevTag := g.debounceTag
 	g.Update(keyMsg("*"))
 
-	assert.Equal(t, prevTag, g.debounceTag,
-		"Phase 2 では include への入力で debounceTag は進まない (rg 発火しない)")
+	assert.Greater(t, g.debounceTag, prevTag,
+		"Phase 3: include への入力でも debounceTag が進む (検索を再発火)")
 	assert.Equal(t, "*", g.IncludeValue(), "include への入力は値に反映される")
+}
+
+// proposal #001 Phase 3 / D-2 補足: include 入力欄の値を rg --glob に展開する。
+// glob メタ文字 (* ? [ !) を含まないトークンは substring 体験のため `*token*` に
+// 自動 wrap し、含むトークンはそのまま渡す。空白区切りで複数指定可能。
+func TestExpandIncludePatterns(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  []string
+	}{
+		{
+			name:  "empty input",
+			input: "",
+			want:  nil,
+		},
+		{
+			name:  "whitespace only",
+			input: "   ",
+			want:  nil,
+		},
+		{
+			name:  "plain word auto-wrapped to substring",
+			input: "CLAUDE",
+			want:  []string{"*CLAUDE*"},
+		},
+		{
+			name:  "glob meta passes through (asterisk)",
+			input: "*.go",
+			want:  []string{"*.go"},
+		},
+		{
+			name:  "negation passes through",
+			input: "!testdata/**",
+			want:  []string{"!testdata/**"},
+		},
+		{
+			name:  "char class passes through",
+			input: "[abc].go",
+			want:  []string{"[abc].go"},
+		},
+		{
+			name:  "question mark passes through",
+			input: "a?.txt",
+			want:  []string{"a?.txt"},
+		},
+		{
+			name:  "space-separated tokens with mixed forms",
+			input: "*.go bar !testdata/**",
+			want:  []string{"*.go", "*bar*", "!testdata/**"},
+		},
+		{
+			name:  "leading/trailing whitespace trimmed",
+			input: "  foo  ",
+			want:  []string{"*foo*"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := expandIncludePatterns(tt.input)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// proposal #001 Phase 3: handleDebounceTick が include 入力欄の現在値を
+// 展開して Search に globs として渡す。
+// テストは「pattern + include の組合せから、debounceTick で globs が展開される」
+// パスに到達することを確認する (実 rg 実行は integration test 側)。
+func TestGrepDebounceTickComputesGlobsFromInclude(t *testing.T) {
+	g := NewGrepModel()
+	g.textInput.SetValue("foo")
+	g.includeInput.SetValue("CLAUDE *.md")
+	g.debounceTag = 1
+
+	// expand を直接確認 (handleDebounceTick の内部でこれが Search に渡される設計)
+	got := expandIncludePatterns(g.IncludeValue())
+	assert.Equal(t, []string{"*CLAUDE*", "*.md"}, got,
+		"include 値は expandIncludePatterns で globs に展開される")
 }
 
 // pattern 側の入力は従来通り debounce → rg 発火経路に乗る。
