@@ -110,8 +110,13 @@ const includeGlobMetaChars = "*?[!"
 // という直観的な substring 体験が UX 上必要だったため、以下のルールで補助する:
 //
 //   - 空白で split (空文字列・空白のみは nil)
+//   - トークンが trivial glob (`*` と `/` のみで構成) → 捨てる (proposal Phase 4)
 //   - 各トークンが glob メタ文字 (* ? [ !) を含む  → そのまま渡す (例: "*.go", "!testdata/**")
 //   - 含まない                                     → "*token*" に wrap (例: "CLAUDE" → "*CLAUDE*")
+//
+// trivial glob を捨てる理由: rg の `--glob` は ignore 上書きを伴うため、
+// `**` 等の no-op フィルタを渡すと .git/ や .gitignore 配下まで掘り出してしまう。
+// 絞り込み効果ゼロのトークンは渡さず、通常 (gitignore 尊重) の rg 検索に戻す。
 //
 // glob 表現を意識して書いたユーザは挙動を変えず、何も知らないユーザは substring で動く。
 func expandIncludePatterns(value string) []string {
@@ -121,13 +126,36 @@ func expandIncludePatterns(value string) []string {
 	}
 	out := make([]string, 0, len(fields))
 	for _, f := range fields {
+		if isTrivialGlob(f) {
+			continue
+		}
 		if strings.ContainsAny(f, includeGlobMetaChars) {
 			out = append(out, f)
 		} else {
 			out = append(out, "*"+f+"*")
 		}
 	}
+	if len(out) == 0 {
+		return nil
+	}
 	return out
+}
+
+// isTrivialGlob はトークンが「絞り込み効果ゼロ」の glob (`*` と `/` のみ構成) か判定する。
+// `*` `**` `*/*` `**/*` `*/**` 等は何でもマッチするので絞り込みにならない一方、
+// rg では `--glob` を渡した瞬間に gitignore が上書きされるため、これを素通しすると
+// .git/ や .gitignore 配下まで検索範囲が広がってしまう。
+// `*.go` 等は文字 (`.` `g` `o`) を含むのでここでは false。
+func isTrivialGlob(token string) bool {
+	if token == "" {
+		return true
+	}
+	for _, r := range token {
+		if r != '*' && r != '/' {
+			return false
+		}
+	}
+	return true
 }
 
 func (g *GrepModel) Update(msg tea.Msg) (Pane, tea.Cmd) {

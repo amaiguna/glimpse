@@ -195,6 +195,7 @@ type PreviewDecorator interface {
 - include の不正な glob → エラー表示は #007 と同じステータス行ルートに乗せる (rg が stderr を返してくれる)
 - 必要に応じて `Ctrl+I` を Shift+Tab の別名として追加
 - ✅ (2026-05-01) include glob が全ファイル除外したときの rg 警告 (`No files were searched, ...`) を no-match 扱いに握りつぶす (`isNoFilesSearchedWarning`)。rg バージョン差で exit 1 / 2 のどちらでも吸収する
+- ✅ (2026-05-01) trivial glob (`*` `**` `*/*` 等、`*` と `/` のみ構成) は捨てる (`isTrivialGlob`)。rg の `--glob` は ignore 上書きを伴うため、no-op フィルタを素通しすると `.git/` や `.gitignore` 配下まで掘り出してしまう実害があるため
 
 ## 未確定事項 / 要再考点
 

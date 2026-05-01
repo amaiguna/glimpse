@@ -143,6 +143,35 @@ func TestExpandIncludePatterns(t *testing.T) {
 			input: "  foo  ",
 			want:  []string{"*foo*"},
 		},
+		// proposal #001 Phase 4 ポリッシュ:
+		// rg の --glob は「gitignore 上書き」を伴うため、`**` のように
+		// 何も絞れない no-op グロブを素通しすると逆に .git/ 等まで掘ってしまう。
+		// "* と / のみ構成" のトークンは絞り込み効果ゼロかつ ignore 上書きだけ起こすので捨てる。
+		{
+			name:  "trivial glob ** dropped (no-op filter)",
+			input: "**",
+			want:  nil,
+		},
+		{
+			name:  "trivial glob * dropped",
+			input: "*",
+			want:  nil,
+		},
+		{
+			name:  "trivial glob */* dropped",
+			input: "*/*",
+			want:  nil,
+		},
+		{
+			name:  "trivial glob mixed with real filter keeps the real one",
+			input: "** *.go",
+			want:  []string{"*.go"},
+		},
+		{
+			name:  "trivial glob mixed with substring keeps wrapped substring",
+			input: "* CLAUDE",
+			want:  []string{"*CLAUDE*"},
+		},
 	}
 
 	for _, tt := range tests {
