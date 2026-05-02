@@ -1,5 +1,5 @@
  [Grep] > Search pattern...
- files: > e.g. *.go !testdata/**
+ files: > filter files (fuzzy)...
 ┌──────────────────────┐┌──────────────────────────────────────────────────────┐
 │                      ││                                                      │
 │                      ││                                                      │

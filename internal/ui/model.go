@@ -144,6 +144,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case FilesLoadedMsg:
+		// proposal #001 fuzzy 路線: ファイル列挙結果は Finder と Grep の両方で使う。
+		// Finder はファジー検索ソース、Grep は include 入力欄の fuzzy filter ソースとして
+		// 同じ list を共有する。paneMsg の単一ターゲット dispatch では片方にしか届かないため、
+		// ここで明示的に両ペインへ propagate する。
+		m.grepPane.SetAllFiles(msg.Items)
+		return m.delegateToFinder(msg)
+
 	// ペイン固有 Msg → PaneTarget() で宛先を判別
 	case paneMsg:
 		switch msg.PaneTarget() {

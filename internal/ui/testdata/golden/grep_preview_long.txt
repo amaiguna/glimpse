@@ -1,5 +1,5 @@
  [Grep] > package 
- files: > e.g. *.go !testdata/**
+ files: > filter files (fuzzy)...
 ┌──────────────────────┐┌──────────────────────────────────────────────────────┐
 │> main.go             ││line 1: some content here for testing purposes        │
 │                      ││line 2: some content here for testing purposes        │

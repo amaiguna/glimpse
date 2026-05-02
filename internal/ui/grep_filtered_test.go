@@ -9,9 +9,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// proposal #001 Phase 2: Grep モードに include glob 入力欄を追加する。
-// このファイルは UI 状態（focus 管理 / 入力欄数 / placeholder / Reset 挙動）に関する
-// テストをまとめる。Phase 3 で rg --glob に配線するときの足場。
+// proposal #001: Grep モードに「対象ファイル絞り込み (include)」入力欄を追加する。
+// 当初 D-2 で採用した rg --glob 路線は ignore 上書き挙動による UX 不整合
+// (e.g. `**` で `.git/` まで掘ってしまう) で破綻したため、D-2(b) fuzzy へ転換。
+// このファイルは UI 状態（focus 管理 / 入力欄数 / placeholder / Reset 挙動）と
+// fuzzy filter 配線のテストをまとめる。
 
 // HeaderViews は pattern と include の 2 入力欄を返す。
 // 1 行目は "[Grep]" ラベル + pattern、2 行目は "files:" ラベル + include。
@@ -21,7 +23,7 @@ func TestGrepHeaderViewsReturnsPatternAndIncludeLines(t *testing.T) {
 	g.textInput.SetValue("foo")
 
 	views := g.HeaderViews()
-	require.Len(t, views, 2, "Phase 2 で Grep は 2 入力欄に拡張される")
+	require.Len(t, views, 2, "Grep は pattern + include の 2 入力欄")
 	assert.Contains(t, views[0], "[Grep]", "1 行目にモードラベル [Grep]")
 	assert.Contains(t, views[0], g.textInput.View(), "1 行目に pattern 入力欄の View")
 	assert.Contains(t, views[1], "files:", "2 行目は include 用ラベルから始まる（discoverable）")
@@ -62,18 +64,16 @@ func TestGrepIncludeInputAcceptsKeystrokesWhenFocused(t *testing.T) {
 	pane, _ := g.Update(specialKeyMsg(tea.KeyShiftTab))
 	got := pane.(*GrepModel)
 
-	pane, _ = got.Update(keyMsg("*"))
-	pane, _ = pane.(*GrepModel).Update(keyMsg("."))
-	pane, _ = pane.(*GrepModel).Update(keyMsg("g"))
-	pane, _ = pane.(*GrepModel).Update(keyMsg("o"))
+	pane, _ = got.Update(keyMsg("C"))
+	pane, _ = pane.(*GrepModel).Update(keyMsg("L"))
+	pane, _ = pane.(*GrepModel).Update(keyMsg("A"))
 	got = pane.(*GrepModel)
 
-	assert.Equal(t, "*.go", got.IncludeValue())
+	assert.Equal(t, "CLA", got.IncludeValue())
 	assert.Equal(t, "hello", got.Query(), "pattern 側は影響を受けない")
 }
 
-// proposal #001 Phase 3: include への入力も rg を発火させる (debounce 経由)。
-// Phase 2 では未配線で「進まない」アサーションだったが、Phase 3 で「進む」に反転。
+// include への入力も rg を再発火させる (debounce 経由)。
 func TestGrepIncludeInputTriggersDebounce(t *testing.T) {
 	g := NewGrepModel()
 	g.debounceTag = 0
@@ -82,120 +82,11 @@ func TestGrepIncludeInputTriggersDebounce(t *testing.T) {
 	g.Update(specialKeyMsg(tea.KeyShiftTab))
 
 	prevTag := g.debounceTag
-	g.Update(keyMsg("*"))
+	g.Update(keyMsg("C"))
 
 	assert.Greater(t, g.debounceTag, prevTag,
-		"Phase 3: include への入力でも debounceTag が進む (検索を再発火)")
-	assert.Equal(t, "*", g.IncludeValue(), "include への入力は値に反映される")
-}
-
-// proposal #001 Phase 3 / D-2 補足: include 入力欄の値を rg --glob に展開する。
-// glob メタ文字 (* ? [ !) を含まないトークンは substring 体験のため `*token*` に
-// 自動 wrap し、含むトークンはそのまま渡す。空白区切りで複数指定可能。
-func TestExpandIncludePatterns(t *testing.T) {
-	tests := []struct {
-		name  string
-		input string
-		want  []string
-	}{
-		{
-			name:  "empty input",
-			input: "",
-			want:  nil,
-		},
-		{
-			name:  "whitespace only",
-			input: "   ",
-			want:  nil,
-		},
-		{
-			name:  "plain word auto-wrapped to substring",
-			input: "CLAUDE",
-			want:  []string{"*CLAUDE*"},
-		},
-		{
-			name:  "glob meta passes through (asterisk)",
-			input: "*.go",
-			want:  []string{"*.go"},
-		},
-		{
-			name:  "negation passes through",
-			input: "!testdata/**",
-			want:  []string{"!testdata/**"},
-		},
-		{
-			name:  "char class passes through",
-			input: "[abc].go",
-			want:  []string{"[abc].go"},
-		},
-		{
-			name:  "question mark passes through",
-			input: "a?.txt",
-			want:  []string{"a?.txt"},
-		},
-		{
-			name:  "space-separated tokens with mixed forms",
-			input: "*.go bar !testdata/**",
-			want:  []string{"*.go", "*bar*", "!testdata/**"},
-		},
-		{
-			name:  "leading/trailing whitespace trimmed",
-			input: "  foo  ",
-			want:  []string{"*foo*"},
-		},
-		// proposal #001 Phase 4 ポリッシュ:
-		// rg の --glob は「gitignore 上書き」を伴うため、`**` のように
-		// 何も絞れない no-op グロブを素通しすると逆に .git/ 等まで掘ってしまう。
-		// "* と / のみ構成" のトークンは絞り込み効果ゼロかつ ignore 上書きだけ起こすので捨てる。
-		{
-			name:  "trivial glob ** dropped (no-op filter)",
-			input: "**",
-			want:  nil,
-		},
-		{
-			name:  "trivial glob * dropped",
-			input: "*",
-			want:  nil,
-		},
-		{
-			name:  "trivial glob */* dropped",
-			input: "*/*",
-			want:  nil,
-		},
-		{
-			name:  "trivial glob mixed with real filter keeps the real one",
-			input: "** *.go",
-			want:  []string{"*.go"},
-		},
-		{
-			name:  "trivial glob mixed with substring keeps wrapped substring",
-			input: "* CLAUDE",
-			want:  []string{"*CLAUDE*"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := expandIncludePatterns(tt.input)
-			assert.Equal(t, tt.want, got)
-		})
-	}
-}
-
-// proposal #001 Phase 3: handleDebounceTick が include 入力欄の現在値を
-// 展開して Search に globs として渡す。
-// テストは「pattern + include の組合せから、debounceTick で globs が展開される」
-// パスに到達することを確認する (実 rg 実行は integration test 側)。
-func TestGrepDebounceTickComputesGlobsFromInclude(t *testing.T) {
-	g := NewGrepModel()
-	g.textInput.SetValue("foo")
-	g.includeInput.SetValue("CLAUDE *.md")
-	g.debounceTag = 1
-
-	// expand を直接確認 (handleDebounceTick の内部でこれが Search に渡される設計)
-	got := expandIncludePatterns(g.IncludeValue())
-	assert.Equal(t, []string{"*CLAUDE*", "*.md"}, got,
-		"include 値は expandIncludePatterns で globs に展開される")
+		"include への入力でも debounceTag が進む (検索を再発火)")
+	assert.Equal(t, "C", g.IncludeValue(), "include への入力は値に反映される")
 }
 
 // pattern 側の入力は従来通り debounce → rg 発火経路に乗る。
@@ -211,11 +102,10 @@ func TestGrepPatternInputStillTriggersDebounce(t *testing.T) {
 }
 
 // Reset は pattern と include の両方をクリアし、focus を pattern に戻す。
-// proposal の "Reset 時の include 欄保持: 残さない" 決定に対応。
 func TestGrepResetClearsBothInputsAndRestoresPatternFocus(t *testing.T) {
 	g := NewGrepModel()
 	g.textInput.SetValue("foo")
-	g.includeInput.SetValue("*.go")
+	g.includeInput.SetValue("CLAUDE")
 	// include に focus を移しておく
 	g.Update(specialKeyMsg(tea.KeyShiftTab))
 
@@ -227,17 +117,16 @@ func TestGrepResetClearsBothInputsAndRestoresPatternFocus(t *testing.T) {
 	assert.False(t, g.includeInput.Focused())
 }
 
-// include 入力欄の placeholder は何が入るか（ユーザに glob の書式例を示す）の
-// discover を担う。空時に grayed-out 表示されることが proposal D-4 の前提。
+// include 入力欄の placeholder は何が入るか (ファイルパスの絞り込み) を示す。
+// fuzzy 化に伴い旧 "*.go !testdata/**" 例文から汎用的な「filter files」表現に変更。
 func TestGrepIncludeInputHasPlaceholder(t *testing.T) {
 	g := NewGrepModel()
 	require.NotEmpty(t, g.includeInput.Placeholder,
-		"include 入力欄には書式例の placeholder が必要 (discoverability)")
-	// 具体的な例文は proposal の "e.g. *.go !testdata/**" に従う。
+		"include 入力欄には placeholder が必要 (discoverability)")
 	assert.True(t,
-		strings.Contains(g.includeInput.Placeholder, "*.go") ||
-			strings.Contains(g.includeInput.Placeholder, "glob"),
-		"placeholder に glob 例が含まれる: %q", g.includeInput.Placeholder)
+		strings.Contains(strings.ToLower(g.includeInput.Placeholder), "file") ||
+			strings.Contains(strings.ToLower(g.includeInput.Placeholder), "path"),
+		"placeholder にファイル/パス絞り込みであることが分かる文言: %q", g.includeInput.Placeholder)
 }
 
 // Blur は両方の入力欄を blur する。モード切替時にカーソル表示が完全に消えるため。
@@ -265,10 +154,6 @@ func TestGrepFocusReturnsToPatternInput(t *testing.T) {
 // proposal #001 D-3 補強: focus 中の入力欄ラベルだけ強調表示し、
 // もう一方は dim で表示する。Shift+Tab でハイライトが入れ替わることで
 // 「今どっちの入力欄に文字が流れるか」がラベルだけ見て判別できる。
-//
-// テストはスタイル文字列の包含で判定する: HeaderViews の戻り値に
-// modeLabelStyle 由来の ANSI が active 行のラベル位置だけに現れることを
-// 確認する。inactive 側は inactiveLabelStyle が適用される。
 func TestGrepHeaderLabelHighlightFollowsFocus(t *testing.T) {
 	g := NewGrepModel()
 
@@ -302,4 +187,104 @@ func TestFinderHeaderLabelAlwaysActive(t *testing.T) {
 	require.Len(t, views, 1)
 	assert.Contains(t, views[0], modeLabelStyle.Render("[Files]"),
 		"Finder の [Files] ラベルは常に active style で描画される")
+}
+
+// proposal #001 fuzzy 路線: GrepModel は SetAllFiles で Finder と同じ
+// ファイル列挙結果を共有する。include 入力欄はこの list に対する fuzzy filter として動く。
+func TestGrepStoresAllFilesViaSetter(t *testing.T) {
+	g := NewGrepModel()
+	files := []string{"main.go", "internal/ui/model.go", "CLAUDE.md"}
+
+	g.SetAllFiles(files)
+
+	assert.Equal(t, files, g.allFiles,
+		"SetAllFiles で渡された list を保持し、include 入力時の fuzzy filter ソースとして使う")
+}
+
+// fuzzy filter のヘルパは include クエリに合致するファイルだけを返す。
+// 空クエリは nil (フィルタ無し = 全件検索を意味する) で返す。
+// マッチ 0 件も nil。クエリ非空で list が空でも nil。
+func TestFuzzyFilterFiles(t *testing.T) {
+	files := []string{
+		"CLAUDE.md",
+		"README.md",
+		"internal/ui/model.go",
+		"internal/ui/grep_model.go",
+	}
+
+	t.Run("empty query returns nil (no filter)", func(t *testing.T) {
+		got := fuzzyFilterFiles("", files)
+		assert.Nil(t, got, "空クエリは nil = filter 無効と表現する (caller 側で全検索分岐)")
+	})
+
+	t.Run("matches by substring", func(t *testing.T) {
+		got := fuzzyFilterFiles("CLAUDE", files)
+		assert.Equal(t, []string{"CLAUDE.md"}, got)
+	})
+
+	t.Run("subsequence match (fuzzy semantics)", func(t *testing.T) {
+		got := fuzzyFilterFiles("intui", files)
+		assert.Contains(t, got, "internal/ui/model.go",
+			"fuzzy なので intui → internal/ui の subsequence で当たる")
+	})
+
+	t.Run("no match returns nil", func(t *testing.T) {
+		got := fuzzyFilterFiles("ZZZNONEXISTENT", files)
+		assert.Nil(t, got)
+	})
+
+	t.Run("empty file list returns nil", func(t *testing.T) {
+		got := fuzzyFilterFiles("anything", nil)
+		assert.Nil(t, got)
+	})
+}
+
+// debounceTick で include が非空なら fuzzy filter したファイル群が runGrepCmd に渡される
+// (handleDebounceTick の rg 呼び出し経路を pin する)。
+// Cmd の中身まで覗くのは過剰なので、include の値変化が「fuzzyFilterFiles の戻り値」と一致することと、
+// fuzzy 0 マッチ時は loading=false / items=nil で rg を呼ばないことを別 assertion で確認する。
+func TestGrepDebounceTickFuzzyFiltersIncludeFiles(t *testing.T) {
+	allFiles := []string{
+		"CLAUDE.md",
+		"README.md",
+		"internal/ui/model.go",
+	}
+
+	t.Run("include 非空 + fuzzy ヒットありは rg 起動 (loading=true)", func(t *testing.T) {
+		g := NewGrepModel()
+		g.SetAllFiles(allFiles)
+		g.textInput.SetValue("foo")
+		g.includeInput.SetValue("CLAUDE")
+		g.debounceTag = 1
+
+		_, cmd := g.Update(debounceTickMsg{tag: 1})
+		assert.NotNil(t, cmd, "fuzzy ヒットあり → rg 起動 Cmd が返る")
+		assert.True(t, g.loading, "rg 起動中なので loading=true")
+	})
+
+	t.Run("include 非空 + fuzzy 0 ヒットは rg を呼ばず空結果", func(t *testing.T) {
+		g := NewGrepModel()
+		g.SetAllFiles(allFiles)
+		g.textInput.SetValue("foo")
+		g.includeInput.SetValue("ZZZNOMATCH")
+		g.items = []string{"stale"} // 残骸が消えるかも検証
+		g.debounceTag = 1
+
+		_, cmd := g.Update(debounceTickMsg{tag: 1})
+		assert.Nil(t, cmd, "fuzzy ヒット 0 → rg を呼ばない")
+		assert.False(t, g.loading, "rg 呼んでないので loading=false")
+		assert.Nil(t, g.items, "前回の items は陳腐化扱いでクリア")
+	})
+
+	t.Run("include 空時は filter 無し = 全件検索", func(t *testing.T) {
+		g := NewGrepModel()
+		g.SetAllFiles(allFiles)
+		g.textInput.SetValue("foo")
+		// includeInput は空のまま
+		g.debounceTag = 1
+
+		_, cmd := g.Update(debounceTickMsg{tag: 1})
+		assert.NotNil(t, cmd, "include 空 → 通常の全件 rg 検索 Cmd")
+		assert.True(t, g.loading)
+	})
 }

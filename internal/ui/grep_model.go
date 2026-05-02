@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/amaiguna/glimpse-tui/internal/finder"
 	"github.com/amaiguna/glimpse-tui/internal/grep"
 	"github.com/amaiguna/glimpse-tui/internal/sanitize"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -29,11 +30,13 @@ const (
 
 // GrepModel はライブ grep モードのペイン。
 // rg --json をデバウンス付きで実行し、結果を表示する。
-// proposal #001 Phase 2 から「対象ファイル絞り込み (include glob)」用の第 2 入力欄を持ち、
+// proposal #001 から「対象ファイル絞り込み (include)」用の第 2 入力欄を持ち、
 // Shift+Tab で 2 入力欄間の focus を移動できる。
+// include 入力は allFiles (Finder と共有のファイル list) に対する fuzzy filter として動作し、
+// マッチしたファイル群だけが rg の検索対象になる (proposal D-2(b) fuzzy 路線)。
 type GrepModel struct {
 	textInput        textinput.Model // grep パターン入力欄
-	includeInput     textinput.Model // include glob 入力欄（proposal #001）
+	includeInput     textinput.Model // include 用 fuzzy filter 入力欄
 	focusedInput     grepFocusedInput
 	items            []string // "file:line:text" 形式
 	cursor           int
@@ -44,15 +47,18 @@ type GrepModel struct {
 	err              error
 	debounceTag      int
 	previewStartLine int // PreviewRange が最後に返した開始行（DecoratePreview で使用）
+	// allFiles は Finder と共有のファイル列挙結果 (FilesLoadedMsg 経由で SetAllFiles される)。
+	// include 入力欄に値があるとき、この list を fuzzy filter して rg に渡す。
+	allFiles []string
 	// searchCancel は進行中の rg 検索を途中で kill するための CancelFunc。
 	// 新しい debounce 発火時や Reset 時に呼び出して古いプロセスを回収する（M-3）。
 	searchCancel context.CancelFunc
 }
 
-// includeInputPlaceholder は include glob 入力欄の placeholder 文言（proposal #001 D-4）。
-// glob の書式例を示すことで「機能の存在 = 何を入れていいか」が UI 上で discover できる。
+// includeInputPlaceholder は include 入力欄の placeholder 文言。
+// fuzzy filter であることを示し、何が入るか (ファイルパス) を hint する。
 // "files: " ラベルは HeaderViews 側で別途付加するため、ここには含めない。
-const includeInputPlaceholder = "e.g. *.go !testdata/**"
+const includeInputPlaceholder = "filter files (fuzzy)..."
 
 // NewGrepModel は GrepModel を初期化して返す。
 func NewGrepModel() *GrepModel {
@@ -80,10 +86,10 @@ const grepSearchTimeout = 10 * time.Second
 // ctx のキャンセルで古い rg プロセスを kill し stdout の溜め込みを防ぐ（M-3）。
 // キャンセル（context.Canceled）は新しい検索で上書き中なので UI に伝えず無視する。
 // DeadlineExceeded は明示的なタイムアウトなのでエラー表示する。
-// globs は include 入力欄から expandIncludePatterns で展開されたもの（proposal #001 Phase 3）。
-func runGrepCmd(ctx context.Context, pattern string, globs []string) tea.Cmd {
+// files は include 入力欄から fuzzyFilterFiles で絞り込んだファイル群。nil なら全検索。
+func runGrepCmd(ctx context.Context, pattern string, files []string) tea.Cmd {
 	return func() tea.Msg {
-		matches, err := grep.Search(ctx, pattern, globs)
+		matches, err := grep.Search(ctx, pattern, files)
 		if errors.Is(err, context.Canceled) {
 			return nil
 		}
@@ -94,68 +100,30 @@ func runGrepCmd(ctx context.Context, pattern string, globs []string) tea.Cmd {
 	}
 }
 
-// includeGlobMetaChars は glob メタ文字の判定に使う文字集合（proposal #001 D-2 補足）。
-// この集合のいずれかを含むトークンは「ユーザが意図的に glob を書いた」と見なし、
-// substring 自動 wrap を skip する。
+// fuzzyFilterFiles は include 入力欄の値で allFiles を fuzzy フィルタする
+// (proposal #001 D-2(b) fuzzy 路線)。
 //
-//   - '*' '?' : ワイルドカード
-//   - '['     : 文字クラス
-//   - '!'     : 否定 (gitignore 形式の negative glob)
-const includeGlobMetaChars = "*?[!"
-
-// expandIncludePatterns は include 入力欄の値を rg --glob トークンに分解する
-// （proposal #001 Phase 3 / D-2 補足）。
+//   - query が空 → nil (filter 無効 = caller は全件検索分岐に入る)
+//   - files が空 → nil (filter 元が無いので何も返せない)
+//   - マッチ 0 件 → nil (検索しても 0 件確定なので caller は rg を呼ばない)
+//   - マッチあり → fuzzy スコア順のパス list
 //
-// proposal D-2 は当初 pure glob を採用していたが、「CLAUDE と打ったら CLAUDE.md にヒット」
-// という直観的な substring 体験が UX 上必要だったため、以下のルールで補助する:
-//
-//   - 空白で split (空文字列・空白のみは nil)
-//   - トークンが trivial glob (`*` と `/` のみで構成) → 捨てる (proposal Phase 4)
-//   - 各トークンが glob メタ文字 (* ? [ !) を含む  → そのまま渡す (例: "*.go", "!testdata/**")
-//   - 含まない                                     → "*token*" に wrap (例: "CLAUDE" → "*CLAUDE*")
-//
-// trivial glob を捨てる理由: rg の `--glob` は ignore 上書きを伴うため、
-// `**` 等の no-op フィルタを渡すと .git/ や .gitignore 配下まで掘り出してしまう。
-// 絞り込み効果ゼロのトークンは渡さず、通常 (gitignore 尊重) の rg 検索に戻す。
-//
-// glob 表現を意識して書いたユーザは挙動を変えず、何も知らないユーザは substring で動く。
-func expandIncludePatterns(value string) []string {
-	fields := strings.Fields(value)
-	if len(fields) == 0 {
+// rg の `--glob` を使わずアプリ側で絞り込みすることで、rg の「`--glob` は ignore を
+// 上書きする」仕様 (`.git/` まで掘ってしまう問題) を回避し、Finder 側の fuzzy 体験と
+// 完全に揃える。
+func fuzzyFilterFiles(query string, files []string) []string {
+	if query == "" || len(files) == 0 {
 		return nil
 	}
-	out := make([]string, 0, len(fields))
-	for _, f := range fields {
-		if isTrivialGlob(f) {
-			continue
-		}
-		if strings.ContainsAny(f, includeGlobMetaChars) {
-			out = append(out, f)
-		} else {
-			out = append(out, "*"+f+"*")
-		}
-	}
-	if len(out) == 0 {
+	matches := finder.FuzzyFilter(query, files)
+	if len(matches) == 0 {
 		return nil
+	}
+	out := make([]string, len(matches))
+	for i, m := range matches {
+		out[i] = m.Str
 	}
 	return out
-}
-
-// isTrivialGlob はトークンが「絞り込み効果ゼロ」の glob (`*` と `/` のみ構成) か判定する。
-// `*` `**` `*/*` `**/*` `*/**` 等は何でもマッチするので絞り込みにならない一方、
-// rg では `--glob` を渡した瞬間に gitignore が上書きされるため、これを素通しすると
-// .git/ や .gitignore 配下まで検索範囲が広がってしまう。
-// `*.go` 等は文字 (`.` `g` `o`) を含むのでここでは false。
-func isTrivialGlob(token string) bool {
-	if token == "" {
-		return true
-	}
-	for _, r := range token {
-		if r != '*' && r != '/' {
-			return false
-		}
-	}
-	return true
 }
 
 func (g *GrepModel) Update(msg tea.Msg) (Pane, tea.Cmd) {
@@ -261,11 +229,30 @@ func (g *GrepModel) handleDebounceTick(msg debounceTickMsg) (Pane, tea.Cmd) {
 		g.err = nil
 		return g, nil
 	}
+	// proposal #001 fuzzy 路線: include 非空なら allFiles を fuzzy filter し、
+	// マッチしたファイル群を rg に渡す。マッチ 0 件なら rg を呼ばずに空結果へ遷移する
+	// (rg --glob と違い ignore を上書きしないので .git/ 等は出ない)。
+	var files []string
+	if includeQuery := strings.TrimSpace(g.includeInput.Value()); includeQuery != "" {
+		files = fuzzyFilterFiles(includeQuery, g.allFiles)
+		if len(files) == 0 {
+			g.searchCancel = nil
+			g.items = nil
+			g.err = nil
+			return g, nil
+		}
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), grepSearchTimeout)
 	g.searchCancel = cancel
 	g.loading = true
-	globs := expandIncludePatterns(g.includeInput.Value())
-	return g, runGrepCmd(ctx, g.textInput.Value(), globs)
+	return g, runGrepCmd(ctx, g.textInput.Value(), files)
+}
+
+// SetAllFiles は Finder と共有のファイル列挙結果を取り込む（proposal #001 fuzzy 路線）。
+// FilesLoadedMsg を model.go から両ペインに propagate する経路で呼ばれる。
+// include 入力中の fuzzy filter ソースとして使う。
+func (g *GrepModel) SetAllFiles(files []string) {
+	g.allFiles = files
 }
 
 // clampOffset はカーソルが表示範囲内に収まるよう offset を調整する。
@@ -429,8 +416,9 @@ func (g *GrepModel) HeaderViews() []string {
 	}
 }
 
-// IncludeValue は include glob 入力欄の現在値を返す（proposal #001）。
-// Phase 2 では UI 状態の参照のみ。Phase 3 で rg --glob 引数組み立てに使う。
+// IncludeValue は include 入力欄の現在値を返す（proposal #001）。
+// 値はファイルパスへの fuzzy クエリとして使われ、handleDebounceTick が
+// allFiles に対して fuzzyFilterFiles をかけて rg の検索対象を絞る。
 func (g *GrepModel) IncludeValue() string { return g.includeInput.Value() }
 
 // OpenTarget はエディタで開く対象を返す。Grep は "file:line:text" からファイルと行番号を抽出する。

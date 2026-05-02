@@ -188,45 +188,45 @@ func TestSearchReturnsErrorWhenBinaryMissing(t *testing.T) {
 	assert.Contains(t, err.Error(), "rg")
 }
 
-// proposal #001 Phase 3: globs を渡すと "--glob <pat>" が pattern より前に
-// 1 つずつ展開される。順序は呼び出し側が指定したまま保つ (rg は include glob を
-// 後から後勝ちで評価するため、ユーザーの入力順を尊重する)。
+// proposal #001 fuzzy 路線: files を渡すと pattern の後ろに positional args として
+// 1 つずつ並ぶ。rg はそれら指定ファイルだけを検索する (gitignore override の落とし穴回避)。
+// files が nil/空のときは pattern のみ → rg は cwd 全体検索 (gitignore 尊重)。
 func TestBuildSearchArgs(t *testing.T) {
 	tests := []struct {
 		name    string
 		pattern string
-		globs   []string
+		files   []string
 		want    []string
 	}{
 		{
-			name:    "no globs",
+			name:    "no files (full search)",
 			pattern: "func",
-			globs:   nil,
+			files:   nil,
 			want:    []string{"--json", "func"},
 		},
 		{
-			name:    "single glob",
+			name:    "single file",
 			pattern: "func",
-			globs:   []string{"*.go"},
-			want:    []string{"--json", "--glob", "*.go", "func"},
+			files:   []string{"main.go"},
+			want:    []string{"--json", "func", "main.go"},
 		},
 		{
-			name:    "multiple globs preserve order",
+			name:    "multiple files preserve order",
 			pattern: "TODO",
-			globs:   []string{"*.go", "*.md", "!testdata/**"},
-			want:    []string{"--json", "--glob", "*.go", "--glob", "*.md", "--glob", "!testdata/**", "TODO"},
+			files:   []string{"a.go", "b.md", "internal/ui/model.go"},
+			want:    []string{"--json", "TODO", "a.go", "b.md", "internal/ui/model.go"},
 		},
 		{
-			name:    "empty globs slice equivalent to nil",
+			name:    "empty files slice equivalent to nil",
 			pattern: "x",
-			globs:   []string{},
+			files:   []string{},
 			want:    []string{"--json", "x"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := buildSearchArgs(tt.pattern, tt.globs)
+			got := buildSearchArgs(tt.pattern, tt.files)
 			assert.Equal(t, tt.want, got)
 		})
 	}
@@ -346,47 +346,6 @@ func TestSearchExitCode1IsNoMatch(t *testing.T) {
 	matches, err := Search(context.Background(), "anything", nil)
 	require.NoError(t, err)
 	assert.Nil(t, matches)
-}
-
-// proposal #001 Phase 4 ポリッシュ: include glob が全ファイルを除外したとき
-// rg は exit 2 + 「No files were searched, ...」の警告を吐くが、UX 上は
-// 「マッチなし」と同等として扱う。Search は nil, nil を返してエラー表示しない。
-func TestSearchTreatsNoFilesSearchedWarningAsNoMatch(t *testing.T) {
-	requireShell(t)
-	orig := rgBinary
-	t.Cleanup(func() { rgBinary = orig })
-
-	dir := t.TempDir()
-	fake := filepath.Join(dir, "rg")
-	err := writeExecutable(fake,
-		"#!/bin/sh\n"+
-			"echo 'rg: No files were searched, which means ripgrep probably applied a filter you did not expect.' >&2\n"+
-			"echo 'Running with --debug will show why files are being skipped.' >&2\n"+
-			"exit 2\n")
-	require.NoError(t, err)
-	rgBinary = fake
-
-	matches, err := Search(context.Background(), "anything", []string{"*nonexistent*"})
-	require.NoError(t, err, "include glob 過剰絞り込みは UX 上 no-match と同等扱い")
-	assert.Nil(t, matches, "no-match なので空")
-}
-
-// 上記 no-files-searched 判定が「stderr に当該文字列を含む」だけで真になり、
-// 別の本物のエラー (regex parse error 等) を握りつぶさないこと。
-func TestSearchKeepsRealErrorsEvenWhenStderrHasOtherText(t *testing.T) {
-	requireShell(t)
-	orig := rgBinary
-	t.Cleanup(func() { rgBinary = orig })
-
-	dir := t.TempDir()
-	fake := filepath.Join(dir, "rg")
-	err := writeExecutable(fake,
-		"#!/bin/sh\necho 'regex parse error: unclosed character class' >&2\nexit 2\n")
-	require.NoError(t, err)
-	rgBinary = fake
-
-	_, err = Search(context.Background(), "[", nil)
-	require.Error(t, err, "no-files-searched 以外の exit 2 はエラーとして surface する")
 }
 
 // #008: rg が exit code 2 + stderr を返すケースで、Search はそれを CmdError として伝搬する。

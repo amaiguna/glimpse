@@ -190,14 +190,18 @@ type rgMatch struct {
 // 古いデバウンスをキャンセルして stdout の溜め込みを防げる。
 // stdout は MaxCmdOutputSize で打ち切られ、超過時は ErrOutputTooLarge を返す（I-1）。
 //
-// globs は rg の --glob オプションに 1 対 1 で展開される (proposal #001 Phase 3)。
-// 例: globs=["*.go", "!testdata/**"] → "rg --json --glob *.go --glob !testdata/** <pattern>"。
-// nil/空スライスのときは --glob を一切渡さず従来通り全ファイルが対象。
-func Search(ctx context.Context, pattern string, globs []string) ([]Match, error) {
+// files は rg の検索対象を絞り込むための positional 引数 (proposal #001 fuzzy 路線)。
+// 例: files=["main.go", "internal/ui/model.go"] → rg はその 2 ファイルだけを検索。
+// nil/空スライスのときは files を渡さず、rg は cwd 全体 (gitignore 尊重) を検索する。
+//
+// 当初 D-2 で採用した --glob 路線は ignore 上書き挙動による UX 不整合 (`**` で
+// `.git/` まで掘る等) で破綻したため、D-2(b) fuzzy へ転換。include による絞り込みは
+// 呼び出し側 (UI) で fuzzy filter したファイル list を渡す形に変更した。
+func Search(ctx context.Context, pattern string, files []string) ([]Match, error) {
 	if rgBinary == "" {
 		return nil, errors.New("rg: executable not found in $PATH")
 	}
-	cmd := exec.CommandContext(ctx, rgBinary, buildSearchArgs(pattern, globs)...)
+	cmd := exec.CommandContext(ctx, rgBinary, buildSearchArgs(pattern, files)...)
 	cmd.Env = whitelistedEnv()
 
 	out, err := runWithLimit(cmd, MaxCmdOutputSize)
@@ -209,42 +213,21 @@ func Search(ctx context.Context, pattern string, globs []string) ([]Match, error
 			return nil, ctxErr
 		}
 		var cmdErr *CmdError
-		if errors.As(err, &cmdErr) {
-			if cmdErr.ExitCode == 1 {
-				return nil, nil
-			}
-			// proposal #001 Phase 4 ポリッシュ: include glob が全ファイルを除外した場合
-			// rg は exit 2 + 「No files were searched, ...」の警告を返す。
-			// これは UX 上「マッチなし」と意味的に同じなので、エラーとして surface せず
-			// 空結果として扱う。Stderr 文字列で判定するため exit code は問わない
-			// (rg のバージョン差で exit 1 / 2 のどちらでも吸収する)。
-			if isNoFilesSearchedWarning(cmdErr.Stderr) {
-				return nil, nil
-			}
+		if errors.As(err, &cmdErr) && cmdErr.ExitCode == 1 {
+			return nil, nil
 		}
 		return nil, err
 	}
 	return ParseRgJSON(string(out))
 }
 
-// isNoFilesSearchedWarning は rg の「No files were searched」警告を検出する。
-// include glob で全ファイルが弾かれたとき rg がこのメッセージを stderr に出す。
-// メッセージ全文は rg バージョンによって細部が変わるため、安定するキーフレーズだけで判定する。
-func isNoFilesSearchedWarning(stderr string) bool {
-	return strings.Contains(stderr, "No files were searched")
-}
-
-// buildSearchArgs は rg の引数列を構築する (proposal #001 Phase 3)。
-// "--json" → 各 "--glob <pat>" → pattern の順序で並べる。
-// テスト容易性 + Phase 3 の auto-wrap ロジック (UI 側の expandIncludePatterns) と
-// rg 側の引数組み立てを分離する目的で Search から切り出した。
-func buildSearchArgs(pattern string, globs []string) []string {
-	args := make([]string, 0, 2+2*len(globs))
-	args = append(args, "--json")
-	for _, g := range globs {
-		args = append(args, "--glob", g)
-	}
-	args = append(args, pattern)
+// buildSearchArgs は rg の引数列を構築する (proposal #001 fuzzy 路線)。
+// "--json" → pattern → 各 file の順序で並べる。files が空なら pattern のみ。
+// テスト容易性のため Search から切り出している。
+func buildSearchArgs(pattern string, files []string) []string {
+	args := make([]string, 0, 2+len(files))
+	args = append(args, "--json", pattern)
+	args = append(args, files...)
 	return args
 }
 

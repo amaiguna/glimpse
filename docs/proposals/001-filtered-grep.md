@@ -1,6 +1,6 @@
 # Proposal #001: Filtered Grep モードの追加
 
-**Status:** In Progress (Phase 3 完了 2026-05-01)
+**Status:** Implemented (2026-05-02 / D-2 改訂で fuzzy 路線へ転換)
 
 ## 概要
 
@@ -22,7 +22,7 @@
 
 - Find モード単独の置き換え (Find は別ロールとして温存)
 - 検索結果のランキング / 重要度ソート (現状の rg 順序を維持)
-- ファイル絞り込みでの fuzzy 一致 (rg ネイティブ glob のみ)
+- ~~ファイル絞り込みでの fuzzy 一致 (rg ネイティブ glob のみ)~~ → **撤回 (D-2 改訂)**: fuzzy を採用
 
 ## 設計判断
 
@@ -71,6 +71,32 @@ Phase 3 実装後の実機評価で、proposal が当初不採用にした (b) f
 - glob を意識して書いたユーザの挙動は変わらない (`*.go` はそのまま `*.go`)
 
 placeholder の `e.g. *.go !testdata/**` は引き続き glob 書式の discover を担う。
+
+#### D-2 改訂: fuzzy 路線へ転換 (2026-05-02 確定)
+
+**結論**: D-2 で採用した glob 路線を撤回し、当初不採用にした **(b) fuzzy** に乗り換え。
+
+**経緯**:
+- Phase 3 配線後の実機テストで「`**` を入れると `.git/` まで掘り返される」「`a` だけで `.claude/skills/...` 等の hidden が surface される」という UX 破綻を発見
+- 原因は rg `--glob` のドキュメント仕様: `This always overrides any other ignore logic.` — positive/negative どちらの glob も渡した瞬間に gitignore + hidden 排除が無効化される
+- band-aid (`isTrivialGlob`, `isNoFilesSearchedWarning`) でも本質解決できず: 「glob を渡した瞬間 ignore 失効」が解消されないため、例えば `*.go` でも `.git/...` 配下が surface しうる構造的問題
+
+**新方針** (D-2(b) fuzzy):
+- `GrepModel` が `allFiles` (Finder と共有のファイル列挙結果) を保持
+- include 入力欄は `allFiles` に対する fuzzy filter (sahilm/fuzzy) として動作 — Finder ペインと同じ UX
+- マッチしたファイルパスを `rg --json <pattern> file1 file2 ...` の positional args で渡す
+- gitignore + hidden 排除は fd / rg --files が担うため、自動的に尊重される
+
+**得るもの**:
+- rg の override 挙動から完全切り離し (`.git/`, `.gitignore` 配下が surface する問題が原理的に発生しない)
+- Finder 側の fuzzy 体験と完全一致 → 学習コスト 0
+- band-aid 群を全廃: `expandIncludePatterns`, `isTrivialGlob`, `includeGlobMetaChars`, `isNoFilesSearchedWarning`
+
+**失うもの**:
+- 厳密な glob 書式サポート (`*.go`, `!testdata/**`)。fuzzy で十分代替可能と判断
+- 当初の D-2 不採用理由「手数が多い」は、`finder.ListFiles` 結果が起動時に既に load 済みなので実質的に消滅 (in-process filter)
+
+**変更後の placeholder**: `filter files (fuzzy)...`
 
 ### D-3. キーバインド: Tab 循環は維持、Shift+Tab で入力欄間移動
 
@@ -177,25 +203,31 @@ type PreviewDecorator interface {
 - include アクセサ: `GrepModel.IncludeValue() string`
 - Phase 3 で配線するときに反転させるテスト: `TestGrepIncludeInputDoesNotTriggerDebounce` の debounceTag アサーションを「進む」へ反転 + rg 引数組み立て側の `--glob` 配線テスト追加
 
-### Phase 3: rg --glob 配線 ✅ 完了 (2026-05-01)
+### Phase 3: ~~rg --glob 配線~~ → fuzzy 配線 ✅ 完了 (2026-05-02 改訂版)
 
-- include の入力値を空白で split し、各トークンを `--glob` 引数として rg に渡す → 完了 (`expandIncludePatterns` + `buildSearchArgs`)
-- 空白区切り仕様は doc に明記 → 完了 (D-2 補足)
-- 既存 debounce タイミングに include の変更も乗せる → 完了 (`scheduleDebounce` に共通化)
-- substring 自動 wrap (D-2 補足) → 完了
+**初期実装 (2026-05-01)** は `--glob` 路線で完成したが、実機評価で D-2 改訂となり破棄。
+最終実装は **fuzzy 路線**:
 
-**成功基準**:
-- include 欄に `*.go` を入れて grep すると `.go` ファイルだけがヒット → 達成
-- include 欄に `!testdata/**` を入れると `testdata` 配下が除外される → 達成
-- 追加: include 欄に `CLAUDE` (glob メタなし) を入れると `*CLAUDE*` に展開され `CLAUDE.md` がヒット → 達成
+- `grep.Search(ctx, pattern, files []string)` シグネチャに変更 — `--glob` ではなく positional file args を受け取る
+- `GrepModel.allFiles` に Finder と共有のファイル list を保持 (`SetAllFiles` 経由)
+- `model.go` で `FilesLoadedMsg` を Finder + Grep 両ペインに propagate
+- `fuzzyFilterFiles(query, files)` が `finder.FuzzyFilter` ラッパとして fuzzy 絞り込み
+- `handleDebounceTick`: include 非空 → fuzzy 絞り → ヒット 0 件なら rg 呼ばず空結果 / ヒットあれば file list を rg に渡す
+- include 入力でも debounce 経路 (`scheduleDebounce`) を共有
+
+**成功基準** (改訂版):
+- include 欄に `CLAUDE` で `CLAUDE.md` がヒット → 達成
+- include 欄に `internal/ui` で `internal/ui/*` 配下にヒット (fuzzy subsequence) → 達成
+- include 欄に `**` 等の no-op を入れても `.git/` まで掘らない (gitignore 尊重) → 達成 (構造的に発生しない)
+- 0 マッチ時に rg を呼ばずに空結果を返す → 達成
 
 ### Phase 4: ポリッシュ
 
 - ヘルプ表示 (`?` キー検討) でのキーバインド説明
-- include の不正な glob → エラー表示は #007 と同じステータス行ルートに乗せる (rg が stderr を返してくれる)
 - 必要に応じて `Ctrl+I` を Shift+Tab の別名として追加
-- ✅ (2026-05-01) include glob が全ファイル除外したときの rg 警告 (`No files were searched, ...`) を no-match 扱いに握りつぶす (`isNoFilesSearchedWarning`)。rg バージョン差で exit 1 / 2 のどちらでも吸収する
-- ✅ (2026-05-01) trivial glob (`*` `**` `*/*` 等、`*` と `/` のみ構成) は捨てる (`isTrivialGlob`)。rg の `--glob` は ignore 上書きを伴うため、no-op フィルタを素通しすると `.git/` や `.gitignore` 配下まで掘り出してしまう実害があるため
+- ~~include の不正な glob → エラー表示~~ — fuzzy 化で不要 (構文エラーが起きない)
+- ~~No files were searched 警告の握りつぶし (`isNoFilesSearchedWarning`)~~ — fuzzy 化で発生しなくなったため撤去
+- ~~trivial glob (`**`) のスキップ (`isTrivialGlob`)~~ — fuzzy 化で発生しなくなったため撤去
 
 ## 未確定事項 / 要再考点
 
@@ -215,7 +247,7 @@ type PreviewDecorator interface {
 | `internal/ui/finder.go` | 新インターフェースに合わせて受動的な変更 |
 | `internal/ui/grep_model.go` | textinput 2 個化 + glob 引数組み立て |
 | `internal/ui/model.go` | 型アサーションでヘッダー / セレクタ取得 |
-| `internal/grep/grep.go` | `Search(ctx, pattern, globs []string)` 等にシグネチャ拡張 |
+| `internal/grep/grep.go` | `Search(ctx, pattern, files []string)` シグネチャ (D-2 改訂後の最終形)。当初 `globs []string` を経由したが撤回 |
 | ゴールデン全般 | ヘッダー 2 行化 / include grayed-out 対応で大量更新 |
 | シナリオテスト | include 入力 + 検索のシナリオ追加 |
 
