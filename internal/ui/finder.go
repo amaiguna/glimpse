@@ -16,12 +16,21 @@ import (
 // 大規模リポでも十分な余裕を取りつつ、暴走プロセスは kill されるようにする（M-3）。
 const finderListTimeout = 30 * time.Second
 
+// fuzzyItem は表示用アイテム 1 件と、そのファジーマッチ位置 (proposal #002 D-6)。
+// MatchedIndexes は sahilm/fuzzy 由来の **rune** 位置のスライスで、View で
+// highlightAtIndexes に渡してハイライト ANSI を挿入する。
+// クエリ空時は MatchedIndexes は意味を持たない (View 側で query を見て highlight skip)。
+type fuzzyItem struct {
+	Str            string
+	MatchedIndexes []int
+}
+
 // FinderModel はファイルファインダーモードのペイン。
 // fd/rg --files で取得したファイル一覧をファジーフィルタリングする。
 type FinderModel struct {
 	textInput  textinput.Model
-	items      []string // フィルタ後の表示アイテム
-	allFiles   []string // フィルタ前の全ファイルリスト
+	items      []fuzzyItem // フィルタ後の表示アイテム (Str + マッチ位置)
+	allFiles   []string    // フィルタ前の全ファイルリスト
 	cursor     int
 	offset     int // スクロールオフセット（表示先頭行）
 	viewHeight int // 表示可能行数（親から設定）
@@ -100,15 +109,17 @@ func (f *FinderModel) handleKey(msg tea.KeyMsg) (Pane, tea.Cmd) {
 }
 
 // applyFilter はファジーフィルタを適用しカーソルをクランプする。
+// proposal #002 D-6: 結果は fuzzyItem として MatchedIndexes も保持し、View で
+// ハイライト挿入に使う。
 func (f *FinderModel) applyFilter() {
 	query := f.textInput.Value()
 	filtered := finder.FuzzyFilter(query, f.allFiles)
 	if filtered == nil {
 		f.items = nil
 	} else {
-		f.items = make([]string, len(filtered))
+		f.items = make([]fuzzyItem, len(filtered))
 		for i, v := range filtered {
-			f.items[i] = v.Str
+			f.items[i] = fuzzyItem{Str: v.Str, MatchedIndexes: v.MatchedIndexes}
 		}
 	}
 	if len(f.items) == 0 {
@@ -163,6 +174,10 @@ func truncateToWidth(s string, w int) string {
 }
 
 // View はリスト部分のみを描画する（ヘッダーは親 Model が担当）。
+// proposal #002 Phase 2: クエリ非空時に各 item の MatchedIndexes 位置をハイライトする。
+// 描画パイプ: sanitize → highlight (rune 単位) → truncate の順。sanitize 後のハイライト
+// 注入なら ANSI 注入攻撃が起きず、truncate は ansi.Truncate が ANSI 認識して可視幅を計算する。
+// クエリ空時は highlight をスキップ (D-3)。
 func (f *FinderModel) View() string {
 	h := f.visibleHeight()
 	if f.offset < 0 || f.offset > len(f.items) {
@@ -176,6 +191,7 @@ func (f *FinderModel) View() string {
 
 	// カーソル記号 "> " の分を引いた残り幅
 	itemWidth := f.viewWidth - 2
+	hasQuery := f.textInput.Value() != ""
 
 	var b strings.Builder
 	for i, item := range visible {
@@ -185,7 +201,11 @@ func (f *FinderModel) View() string {
 		absIdx := f.offset + i
 		// 描画用にサニタイズ。SelectedItem/FilePath/OpenTarget は raw のまま使うため
 		// ここで保持される items 自体は変更しない。
-		display := truncateToWidth(sanitize.ForTerminal(item), itemWidth)
+		display := sanitize.ForTerminal(item.Str)
+		if hasQuery && len(item.MatchedIndexes) > 0 {
+			display = highlightAtIndexes(display, item.MatchedIndexes)
+		}
+		display = truncateToWidth(display, itemWidth)
 		if absIdx == f.cursor {
 			b.WriteString(selectedItemStyle.Render("> " + display))
 		} else {
@@ -199,7 +219,7 @@ func (f *FinderModel) SelectedItem() string {
 	if len(f.items) == 0 {
 		return ""
 	}
-	return f.items[f.cursor]
+	return f.items[f.cursor].Str
 }
 
 // FilePath はプレビュー用のファイルパスを返す。Finder モードではアイテムがそのままパス。
@@ -240,12 +260,13 @@ func (f *FinderModel) OpenTarget() (string, int) {
 }
 
 // Reset はモード切替時にペインの状態をリセットする。
+// クエリが空なので applyFilter で MatchedIndexes は付かない (= ハイライトされない)。
 func (f *FinderModel) Reset() {
 	f.textInput.SetValue("")
 	f.cursor = 0
 	f.offset = 0
 	f.err = nil
-	f.items = f.allFiles
+	f.applyFilter()
 }
 
 // Focus はテキスト入力にフォーカスを当てる。

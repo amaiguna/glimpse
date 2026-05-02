@@ -7,6 +7,27 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// itemsFromStrings は []string を MatchedIndexes 無しの []fuzzyItem に変換する
+// テストヘルパ。proposal #002 D-6 で items を struct 化したことによる
+// 既存テストの assignment コストを抑えるため。
+func itemsFromStrings(strs ...string) []fuzzyItem {
+	out := make([]fuzzyItem, len(strs))
+	for i, s := range strs {
+		out[i] = fuzzyItem{Str: s}
+	}
+	return out
+}
+
+// stringsFromItems は []fuzzyItem を []string に展開するテストヘルパ。
+// assertion 比較用 (failure log で構造体ダンプより文字列の方が読みやすい)。
+func stringsFromItems(items []fuzzyItem) []string {
+	out := make([]string, len(items))
+	for i, it := range items {
+		out[i] = it.Str
+	}
+	return out
+}
+
 func TestFinderCursorMovement(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -50,7 +71,7 @@ func TestFinderCursorMovement(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			f := NewFinderModel()
 			f.allFiles = tt.items
-			f.items = tt.items
+			f.items = itemsFromStrings(tt.items...)
 			f.loading = false
 
 			var pane Pane = f
@@ -66,7 +87,7 @@ func TestFinderCursorMovement(t *testing.T) {
 func TestFinderCharacterInput(t *testing.T) {
 	f := NewFinderModel()
 	f.allFiles = []string{"main.go", "go.mod"}
-	f.items = f.allFiles
+	f.items = itemsFromStrings(f.allFiles...)
 	f.loading = false
 
 	var pane Pane = f
@@ -75,13 +96,13 @@ func TestFinderCharacterInput(t *testing.T) {
 	pane, _ = pane.Update(keyMsg("i"))
 
 	assert.Equal(t, "mai", pane.Query())
-	assert.Equal(t, []string{"main.go"}, pane.(*FinderModel).items)
+	assert.Equal(t, []string{"main.go"}, stringsFromItems(pane.(*FinderModel).items))
 }
 
 func TestFinderBackspace(t *testing.T) {
 	f := NewFinderModel()
 	f.allFiles = []string{"main.go", "go.mod"}
-	f.items = f.allFiles
+	f.items = itemsFromStrings(f.allFiles...)
 	f.loading = false
 
 	var pane Pane = f
@@ -95,7 +116,7 @@ func TestFinderBackspace(t *testing.T) {
 func TestFinderCursorClampsOnFilter(t *testing.T) {
 	f := NewFinderModel()
 	f.allFiles = []string{"main.go", "go.mod", "README.md"}
-	f.items = f.allFiles
+	f.items = itemsFromStrings(f.allFiles...)
 	f.cursor = 2
 	f.loading = false
 
@@ -115,7 +136,7 @@ func TestFinderFilesLoadedMsg(t *testing.T) {
 	got := pane.(*FinderModel)
 
 	assert.Equal(t, []string{"a.go", "b.go"}, got.allFiles)
-	assert.Equal(t, []string{"a.go", "b.go"}, got.items)
+	assert.Equal(t, []string{"a.go", "b.go"}, stringsFromItems(got.items))
 	assert.False(t, got.loading)
 }
 
@@ -126,7 +147,7 @@ func TestFinderFilesLoadedMsgWithQuery(t *testing.T) {
 	pane, _ := f.Update(FilesLoadedMsg{Items: []string{"main.go", "go.mod", "README.md"}})
 	got := pane.(*FinderModel)
 
-	assert.Equal(t, []string{"main.go"}, got.items)
+	assert.Equal(t, []string{"main.go"}, stringsFromItems(got.items))
 }
 
 func TestFinderFilesErrorMsg(t *testing.T) {
@@ -141,7 +162,7 @@ func TestFinderFilesErrorMsg(t *testing.T) {
 
 func TestFinderSelectedItem(t *testing.T) {
 	f := NewFinderModel()
-	f.items = []string{"main.go", "go.mod"}
+	f.items = itemsFromStrings("main.go", "go.mod")
 	f.cursor = 1
 
 	assert.Equal(t, "go.mod", f.SelectedItem())
@@ -156,7 +177,7 @@ func TestFinderSelectedItemEmpty(t *testing.T) {
 
 func TestFinderView(t *testing.T) {
 	f := NewFinderModel()
-	f.items = []string{"main.go", "go.mod"}
+	f.items = itemsFromStrings("main.go", "go.mod")
 	f.cursor = 0
 	f.loading = false
 
@@ -172,7 +193,7 @@ func TestFinderView(t *testing.T) {
 func TestFinderViewSanitizesEscapesInFilenames(t *testing.T) {
 	evilName := "name_\x1b[41;97mHIJACKED\x1b[0m_.txt"
 	f := NewFinderModel()
-	f.items = []string{evilName, "normal.go"}
+	f.items = itemsFromStrings(evilName, "normal.go")
 	f.cursor = 0
 	f.loading = false
 	f.SetViewSize(10, 80)
@@ -191,7 +212,7 @@ func TestFinderViewSanitizesEscapesInFilenames(t *testing.T) {
 func TestFinderRawPathsForOperations(t *testing.T) {
 	evilName := "weird_\x1b[31mname\x1b[0m.go"
 	f := NewFinderModel()
-	f.items = []string{evilName}
+	f.items = itemsFromStrings(evilName)
 	f.cursor = 0
 
 	assert.Equal(t, evilName, f.SelectedItem())
@@ -210,5 +231,5 @@ func TestFinderReset(t *testing.T) {
 	f.Reset()
 	assert.Equal(t, "", f.Query())
 	assert.Equal(t, 0, f.cursor)
-	assert.Equal(t, []string{"a", "b"}, f.items)
+	assert.Equal(t, []string{"a", "b"}, stringsFromItems(f.items))
 }

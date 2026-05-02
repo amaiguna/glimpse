@@ -1,6 +1,6 @@
 # Proposal #002: Finder / Grep ファジーマッチのハイライト表示
 
-**Status:** Approved (2026-05-02)
+**Status:** Implemented (2026-05-02)
 
 ## 概要
 
@@ -111,32 +111,34 @@ type GrepModel struct {
 
 ## 段階的ロードマップ
 
-### Phase 1: スタイル定数 + ヘルパ追加
+### Phase 1: スタイル定数 + ヘルパ追加 ✅ 完了 (2026-05-02)
 
-- `styles.go` に `fuzzyMatchHlStart` / `fuzzyMatchHlEnd` 定数を追加 (値は当面 `matchHlStart`/`End` と同じ)
-- `highlightAtIndexes(s string, indexes []int) string` ヘルパ追加 (rune-aware に各文字位置にハイライト ANSI を挿入)
-- 単独の table-driven テストで pin
+- `styles.go` に `fuzzyMatchHlStart` / `fuzzyMatchHlEnd` 定数を追加 (値は当面 `matchHlStart`/`End` と同じ) → 完了
+- `highlightAtIndexes(s string, indexes []int) string` ヘルパ追加 (rune-aware + 隣接マージ) → 完了 (`fuzzy_highlight.go`)
+- 単独の table-driven テストで pin → 完了 (11 ケース)
 
-**成功基準**: `highlightAtIndexes("abc", []int{1})` が "a" + ハイライト + "b" + リセット + "c" を返す
+**結果**: `highlightAtIndexes` は隣接マージ・out-of-range 許容・rune-aware・順序非依存の defensive 実装。`fuzzyMatchHlStart`/`End` は `matchHlStart`/`End` と同値 (parity test で pin)。
 
-### Phase 2: Finder ペインのハイライト
+### Phase 2: Finder ペインのハイライト ✅ 完了 (2026-05-02)
 
-- `FinderModel.items` を `[]fuzzyItem` に変更
-- `applyFilter()` で MatchedIndexes も保持
-- `View()` でクエリ非空時にハイライト適用 (sanitize → highlight → truncate の順)
-- `SelectedItem` / `FilePath` / `OpenTarget` の内部実装を `.Str` 経由に
-- ゴールデン更新
+- `FinderModel.items` を `[]fuzzyItem` に変更 → 完了
+- `applyFilter()` で MatchedIndexes も保持 → 完了
+- `View()` でクエリ非空時にハイライト適用 (sanitize → highlight → truncate の順) → 完了
+- `SelectedItem` / `FilePath` / `OpenTarget` の内部実装を `.Str` 経由に → 完了
+- ゴールデン: 既存 finder goldens は query 空構成のため差分なし
 
-**成功基準**: クエリ "intui" で `internal/ui/model.go` の i, n, t, u, i 各文字位置に ANSI ハイライトが乗る (TestMain 強制 ANSI 環境で assert)
+**結果**: クエリ "mai" で main.go の m,a,i が連続マッチして単一 ANSI ペアでハイライト。空クエリ時は `MatchedIndexes` 有無を見ず `query` 文字列で skip 判定。
 
-### Phase 3: Grep 左ペインのハイライト
+### Phase 3: Grep 左ペインのハイライト ✅ 完了 (2026-05-02)
 
-- `GrepModel` に `pathMatchedIndexes` 等を追加 (実装は方式自由)
-- `handleDebounceTick` (または fuzzyFilterFiles 周辺) で MatchedIndexes を保持
-- `View()` で include 非空時にファイルパス部分のみハイライト
-- ゴールデン更新
+- `GrepModel.pathMatchedIndexes map[string][]int` 追加 → 完了
+- `fuzzyFilterFiles` を `(paths, indexes map)` の 2 値返しに変更 → 完了
+- `handleDebounceTick` で `pathMatchedIndexes` を populate (include 空時は nil クリア) → 完了
+- `View()` で include 非空時にファイルパス部分のみハイライト → 完了 (`parseGrepItem` で path 抽出後にマップ lookup)
+- `Reset()` で `pathMatchedIndexes` も nil 化
+- ゴールデン: 既存 grep goldens は include 空構成のため差分なし
 
-**成功基準**: include "CLAUDE" で grep 結果リストの `CLAUDE.md` 部分にハイライトが乗り、`:42:matched text` 部分は素通し
+**結果**: include "CLAUDE" で grep 結果リストの `CLAUDE.md` 部分にハイライトが乗る。`:line:text` 部分はそもそも View に出ない (parseGrepItem で path のみ表示) ため、ハイライト範囲が混入することは構造的に発生しない。
 
 ### Phase 4: ポリッシュ (optional / 将来)
 

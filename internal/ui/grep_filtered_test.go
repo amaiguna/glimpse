@@ -213,28 +213,28 @@ func TestFuzzyFilterFiles(t *testing.T) {
 	}
 
 	t.Run("empty query returns nil (no filter)", func(t *testing.T) {
-		got := fuzzyFilterFiles("", files)
+		got, _ := fuzzyFilterFiles("", files)
 		assert.Nil(t, got, "空クエリは nil = filter 無効と表現する (caller 側で全検索分岐)")
 	})
 
 	t.Run("matches by substring", func(t *testing.T) {
-		got := fuzzyFilterFiles("CLAUDE", files)
+		got, _ := fuzzyFilterFiles("CLAUDE", files)
 		assert.Equal(t, []string{"CLAUDE.md"}, got)
 	})
 
 	t.Run("subsequence match (fuzzy semantics)", func(t *testing.T) {
-		got := fuzzyFilterFiles("intui", files)
+		got, _ := fuzzyFilterFiles("intui", files)
 		assert.Contains(t, got, "internal/ui/model.go",
 			"fuzzy なので intui → internal/ui の subsequence で当たる")
 	})
 
 	t.Run("no match returns nil", func(t *testing.T) {
-		got := fuzzyFilterFiles("ZZZNONEXISTENT", files)
+		got, _ := fuzzyFilterFiles("ZZZNONEXISTENT", files)
 		assert.Nil(t, got)
 	})
 
 	t.Run("empty file list returns nil", func(t *testing.T) {
-		got := fuzzyFilterFiles("anything", nil)
+		got, _ := fuzzyFilterFiles("anything", nil)
 		assert.Nil(t, got)
 	})
 }

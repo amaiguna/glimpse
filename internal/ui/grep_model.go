@@ -50,6 +50,10 @@ type GrepModel struct {
 	// allFiles は Finder と共有のファイル列挙結果 (FilesLoadedMsg 経由で SetAllFiles される)。
 	// include 入力欄に値があるとき、この list を fuzzy filter して rg に渡す。
 	allFiles []string
+	// pathMatchedIndexes は include の fuzzy filter で各パスにマッチした rune 位置のマップ
+	// (proposal #002 Phase 3)。include 非空時のみ populate され、View で各 item の
+	// ファイルパス部分のハイライト ANSI 挿入に使う。include 空時 / Reset 時は nil。
+	pathMatchedIndexes map[string][]int
 	// searchCancel は進行中の rg 検索を途中で kill するための CancelFunc。
 	// 新しい debounce 発火時や Reset 時に呼び出して古いプロセスを回収する（M-3）。
 	searchCancel context.CancelFunc
@@ -100,30 +104,36 @@ func runGrepCmd(ctx context.Context, pattern string, files []string) tea.Cmd {
 	}
 }
 
-// fuzzyFilterFiles は include 入力欄の値で allFiles を fuzzy フィルタする
-// (proposal #001 D-2(b) fuzzy 路線)。
+// fuzzyFilterFiles は include 入力欄の値で allFiles を fuzzy フィルタし、
+// マッチしたパス list と「パス → MatchedIndexes」マップの両方を返す
+// (proposal #001 D-2(b) fuzzy 路線 / proposal #002 Phase 3)。
 //
-//   - query が空 → nil (filter 無効 = caller は全件検索分岐に入る)
-//   - files が空 → nil (filter 元が無いので何も返せない)
-//   - マッチ 0 件 → nil (検索しても 0 件確定なので caller は rg を呼ばない)
-//   - マッチあり → fuzzy スコア順のパス list
+//   - query が空 → (nil, nil) — filter 無効
+//   - files が空 → (nil, nil) — filter 元が無い
+//   - マッチ 0 件 → (nil, nil) — caller は rg を呼ばない
+//   - マッチあり → (パス list, パス→indexes マップ)
+//
+// パス list は rg の検索対象として渡す。indexes マップは Grep View で
+// 各 item のファイルパス部分にハイライト ANSI を挿入するために使う (proposal #002 D-2)。
 //
 // rg の `--glob` を使わずアプリ側で絞り込みすることで、rg の「`--glob` は ignore を
 // 上書きする」仕様 (`.git/` まで掘ってしまう問題) を回避し、Finder 側の fuzzy 体験と
 // 完全に揃える。
-func fuzzyFilterFiles(query string, files []string) []string {
+func fuzzyFilterFiles(query string, files []string) ([]string, map[string][]int) {
 	if query == "" || len(files) == 0 {
-		return nil
+		return nil, nil
 	}
 	matches := finder.FuzzyFilter(query, files)
 	if len(matches) == 0 {
-		return nil
+		return nil, nil
 	}
-	out := make([]string, len(matches))
+	paths := make([]string, len(matches))
+	indexes := make(map[string][]int, len(matches))
 	for i, m := range matches {
-		out[i] = m.Str
+		paths[i] = m.Str
+		indexes[m.Str] = m.MatchedIndexes
 	}
-	return out
+	return paths, indexes
 }
 
 func (g *GrepModel) Update(msg tea.Msg) (Pane, tea.Cmd) {
@@ -232,15 +242,19 @@ func (g *GrepModel) handleDebounceTick(msg debounceTickMsg) (Pane, tea.Cmd) {
 	// proposal #001 fuzzy 路線: include 非空なら allFiles を fuzzy filter し、
 	// マッチしたファイル群を rg に渡す。マッチ 0 件なら rg を呼ばずに空結果へ遷移する
 	// (rg --glob と違い ignore を上書きしないので .git/ 等は出ない)。
+	// proposal #002 Phase 3: 同時に「パス → MatchedIndexes」マップも保持し、
+	// View で各 item のファイルパス部分のハイライトに使う。
 	var files []string
 	if includeQuery := strings.TrimSpace(g.includeInput.Value()); includeQuery != "" {
-		files = fuzzyFilterFiles(includeQuery, g.allFiles)
+		files, g.pathMatchedIndexes = fuzzyFilterFiles(includeQuery, g.allFiles)
 		if len(files) == 0 {
 			g.searchCancel = nil
 			g.items = nil
 			g.err = nil
 			return g, nil
 		}
+	} else {
+		g.pathMatchedIndexes = nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), grepSearchTimeout)
 	g.searchCancel = cancel
@@ -304,6 +318,9 @@ func (g *GrepModel) View() string {
 
 	// カーソル記号 "> " の分を引いた残り幅
 	itemWidth := g.viewWidth - 2
+	// proposal #002 Phase 3: include 非空時は pathMatchedIndexes が populate されており、
+	// 各 item のファイルパス部分にハイライトを挿入する。空時はマップが nil で no-op。
+	hasIncludeHighlight := len(g.pathMatchedIndexes) > 0
 
 	var b strings.Builder
 	for i, item := range visible {
@@ -311,10 +328,16 @@ func (g *GrepModel) View() string {
 			b.WriteString("\n")
 		}
 		absIdx := g.offset + i
-		displayItem, _ := parseGrepItem(item)
+		path, _ := parseGrepItem(item)
 		// 描画用にサニタイズ。SelectedItem/FilePath/OpenTarget は raw のまま使うため
 		// ここで保持される items 自体は変更しない。
-		display := truncateToWidth(sanitize.ForTerminal(displayItem), itemWidth)
+		display := sanitize.ForTerminal(path)
+		if hasIncludeHighlight {
+			if idx, ok := g.pathMatchedIndexes[path]; ok && len(idx) > 0 {
+				display = highlightAtIndexes(display, idx)
+			}
+		}
+		display = truncateToWidth(display, itemWidth)
 		if absIdx == g.cursor {
 			b.WriteString(selectedItemStyle.Render("> " + display))
 		} else {
@@ -445,6 +468,7 @@ func (g *GrepModel) Reset() {
 	g.offset = 0
 	g.items = nil
 	g.err = nil
+	g.pathMatchedIndexes = nil
 	g.focusedInput = grepInputPattern
 	g.includeInput.Blur()
 	g.textInput.Focus()

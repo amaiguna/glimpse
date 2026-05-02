@@ -52,7 +52,7 @@ func stripANSI(s string) string {
 func TestModeSwitchWithTab(t *testing.T) {
 	m := NewModel()
 	m.finderPane.allFiles = []string{"a", "b"}
-	m.finderPane.items = []string{"a", "b"}
+	m.finderPane.items = itemsFromStrings("a", "b")
 
 	// Finder → Grep
 	model, _ := m.Update(specialKeyMsg(tea.KeyTab))
@@ -63,7 +63,7 @@ func TestModeSwitchWithTab(t *testing.T) {
 	model, _ = got.Update(specialKeyMsg(tea.KeyTab))
 	got = model.(Model)
 	assert.Equal(t, ModeFinder, got.mode)
-	assert.Equal(t, []string{"a", "b"}, got.finderPane.items)
+	assert.Equal(t, []string{"a", "b"}, stringsFromItems(got.finderPane.items))
 }
 
 func TestModeSwitchAfterScrollDoesNotPanic(t *testing.T) {
@@ -123,7 +123,7 @@ func TestInitReturnsCmd(t *testing.T) {
 
 func TestEnterInFinderMode(t *testing.T) {
 	m := NewModel()
-	m.finderPane.items = []string{"main.go", "go.mod"}
+	m.finderPane.items = itemsFromStrings("main.go", "go.mod")
 	m.finderPane.cursor = 1
 
 	_, cmd := m.Update(specialKeyMsg(tea.KeyEnter))
@@ -155,7 +155,7 @@ func TestFilesLoadedMsgDelegatesToFinder(t *testing.T) {
 	got := model.(Model)
 
 	assert.Equal(t, []string{"a.go", "b.go"}, got.finderPane.allFiles)
-	assert.Equal(t, []string{"a.go", "b.go"}, got.finderPane.items)
+	assert.Equal(t, []string{"a.go", "b.go"}, stringsFromItems(got.finderPane.items))
 	assert.False(t, got.finderPane.loading)
 }
 
@@ -174,7 +174,7 @@ func TestGrepDoneMsgDelegatesToGrep(t *testing.T) {
 func TestCharacterInputDelegatesToActivePane(t *testing.T) {
 	m := NewModel()
 	m.finderPane.allFiles = []string{"main.go", "go.mod"}
-	m.finderPane.items = m.finderPane.allFiles
+	m.finderPane.items = itemsFromStrings(m.finderPane.allFiles...)
 
 	model, _ := m.Update(keyMsg("m"))
 	got := model.(Model)
@@ -184,7 +184,7 @@ func TestCharacterInputDelegatesToActivePane(t *testing.T) {
 
 func TestCursorMoveDelegatesToActivePane(t *testing.T) {
 	m := NewModel()
-	m.finderPane.items = []string{"a", "b", "c"}
+	m.finderPane.items = itemsFromStrings("a", "b", "c")
 
 	model, _ := m.Update(specialKeyMsg(tea.KeyDown))
 	got := model.(Model)
@@ -224,7 +224,7 @@ func TestPreviewUpdatesOnCursorMove(t *testing.T) {
 	require.NoError(t, os.WriteFile(fileB, []byte("package b\n"), 0644))
 
 	m := NewModel()
-	m.finderPane.items = []string{fileA, fileB}
+	m.finderPane.items = itemsFromStrings(fileA, fileB)
 	m.finderPane.allFiles = []string{fileA, fileB}
 	m.finderPane.loading = false
 
@@ -247,7 +247,7 @@ func TestPreviewBinaryFileInFinderMode(t *testing.T) {
 	require.NoError(t, os.WriteFile(binFile, []byte{0x7f, 'E', 'L', 'F', 0x00, 'x'}, 0644))
 
 	m := NewModel()
-	m.finderPane.items = []string{binFile}
+	m.finderPane.items = itemsFromStrings(binFile)
 	m.finderPane.allFiles = []string{binFile}
 	m.finderPane.loading = false
 
@@ -278,7 +278,7 @@ func TestPreviewLargeFileInFinderMode(t *testing.T) {
 	require.NoError(t, os.WriteFile(bigFile, make([]byte, preview.MaxPreviewSize+1), 0644))
 
 	m := NewModel()
-	m.finderPane.items = []string{bigFile}
+	m.finderPane.items = itemsFromStrings(bigFile)
 	m.finderPane.allFiles = []string{bigFile}
 	m.finderPane.loading = false
 
@@ -313,7 +313,7 @@ func TestPreviewExactlyMaxSizeIsAllowed(t *testing.T) {
 	require.NoError(t, os.WriteFile(file, content, 0644))
 
 	m := NewModel()
-	m.finderPane.items = []string{file}
+	m.finderPane.items = itemsFromStrings(file)
 	m.finderPane.allFiles = []string{file}
 	m.finderPane.loading = false
 
@@ -510,7 +510,7 @@ func TestViewContainsQuery(t *testing.T) {
 
 func TestViewContainsItems(t *testing.T) {
 	m := NewModel()
-	m.finderPane.items = []string{"main.go", "go.mod"}
+	m.finderPane.items = itemsFromStrings("main.go", "go.mod")
 	m.finderPane.loading = false
 	m.width = 80
 	m.height = 24
@@ -522,7 +522,7 @@ func TestViewContainsItems(t *testing.T) {
 
 func TestViewShowsCursorIndicator(t *testing.T) {
 	m := NewModel()
-	m.finderPane.items = []string{"main.go", "go.mod"}
+	m.finderPane.items = itemsFromStrings("main.go", "go.mod")
 	m.finderPane.cursor = 1
 	m.finderPane.loading = false
 	m.width = 80
@@ -755,7 +755,7 @@ func TestViewKeepsLayoutOnPaneError(t *testing.T) {
 
 func TestViewContainsPreview(t *testing.T) {
 	m := NewModel()
-	m.finderPane.items = []string{"main.go"}
+	m.finderPane.items = itemsFromStrings("main.go")
 	m.finderPane.loading = false
 	m.previewContent = "package main\nfunc main() {}\n"
 	m.width = 80
@@ -767,7 +767,7 @@ func TestViewContainsPreview(t *testing.T) {
 
 func TestViewPreviewLineTruncatedToFitWidth(t *testing.T) {
 	m := NewModel()
-	m.finderPane.items = []string{"a.txt"}
+	m.finderPane.items = itemsFromStrings("a.txt")
 	m.finderPane.loading = false
 	m.previewContent = strings.Repeat("x", 200) + "\n"
 	m.width = 60
@@ -783,7 +783,7 @@ func TestViewPreviewLineTruncatedToFitWidth(t *testing.T) {
 
 func TestViewFillsFullHeight(t *testing.T) {
 	m := NewModel()
-	m.finderPane.items = []string{"a.txt"}
+	m.finderPane.items = itemsFromStrings("a.txt")
 	m.finderPane.loading = false
 	m.previewContent = "short\n"
 	m.width = 80
@@ -797,7 +797,7 @@ func TestViewFillsFullHeight(t *testing.T) {
 
 func TestViewPanesDoNotOverlap(t *testing.T) {
 	m := NewModel()
-	m.finderPane.items = []string{"main.go", "go.mod", "README.md"}
+	m.finderPane.items = itemsFromStrings("main.go", "go.mod", "README.md")
 	m.finderPane.loading = false
 	m.previewContent = "\x1b[38;5;197mpackage\x1b[0m \x1b[38;5;148mmain\x1b[0m\n" +
 		strings.Repeat("\x1b[38;5;231m"+strings.Repeat("x", 100)+"\x1b[0m\n", 20)

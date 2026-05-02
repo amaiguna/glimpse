@@ -60,6 +60,15 @@ const (
 	ansiReset    = "\x1b[0m"
 )
 
+// ファジーマッチ用ハイライト ANSI エスケープ (proposal #002 D-1)。
+// 当面 matchHlStart/End と同値だが、Finder/Grep 左ペインのファジーマッチ表示と
+// grep プレビューのヒット行ハイライトが偶然同じ ANSI を使っているだけで、
+// 設計上の依存はない。将来別 style にしたい場合はこの定数の値を変えるだけで済む。
+const (
+	fuzzyMatchHlStart = matchHlStart
+	fuzzyMatchHlEnd   = matchHlEnd
+)
+
 // highlightMatches はシンタックスハイライト済みの行から query にマッチする部分を見つけ、
 // マッチ箇所にだけ背景ハイライトを適用する。
 // シンタックスハイライトの前景色はマッチ部分でも非マッチ部分でも保持される。
