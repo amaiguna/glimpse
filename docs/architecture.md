@@ -108,7 +108,7 @@ fd / rg --files
 ### Live Grep モード
 
 ```
-キー入力 (300ms デバウンス)
+キー入力 (100ms デバウンス)
   → debounceTickMsg
     → rg --json <pattern>
       → GrepDoneMsg ([]grep.Match)

@@ -16,7 +16,7 @@ import (
 )
 
 // debounceInterval は Grep モードでの入力デバウンス間隔。
-const debounceInterval = 300 * time.Millisecond
+const debounceInterval = 100 * time.Millisecond
 
 // grepFocusedInput は GrepModel 内のどの入力欄にフォーカスがあるかを表す（proposal #001 Phase 2）。
 type grepFocusedInput int
