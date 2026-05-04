@@ -70,6 +70,6 @@ func TestHeaderViewsReturnsInputView(t *testing.T) {
 		assert.Len(t, views, 2, "Grep は pattern + include の 2 要素 (proposal #001 Phase 2)")
 		assert.Contains(t, views[0], g.textInput.View(), "1 行目に pattern textinput.View()")
 		assert.Contains(t, views[0], "[Grep]", "1 行目にモードラベル [Grep]")
-		assert.Contains(t, views[1], "files:", "2 行目に include ラベル files:")
+		assert.Contains(t, views[1], "[Path]", "2 行目に include ラベル [Path]")
 	})
 }

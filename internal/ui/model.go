@@ -332,7 +332,7 @@ func (m Model) View() string {
 	pane := m.activePane()
 
 	// ヘッダー: pane が提供する完成済みの行をそのまま縦に並べる（proposal #001 D-3 / D-4）。
-	// モードラベル "[Grep]" / "[Files]" や入力欄ラベル "files:" は pane が責任を持って描画し、
+	// モードラベル "[Grep]" / "[Files]" や入力欄ラベル "[Path]" は pane が責任を持って描画し、
 	// active/inactive のスタイル切替もここに含めて返す。
 	// HeaderRenderer 未実装のペインは入力欄なしで描画（将来 Buffer List 等への退路 / #006）。
 	headerInputs := []string{""}

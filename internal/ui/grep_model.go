@@ -61,7 +61,7 @@ type GrepModel struct {
 
 // includeInputPlaceholder は include 入力欄の placeholder 文言。
 // fuzzy filter であることを示し、何が入るか (ファイルパス) を hint する。
-// "files: " ラベルは HeaderViews 側で別途付加するため、ここには含めない。
+// "[Path] " ラベルは HeaderViews 側で別途付加するため、ここには含めない。
 const includeInputPlaceholder = "filter files (fuzzy)..."
 
 // NewGrepModel は GrepModel を初期化して返す。
@@ -418,20 +418,20 @@ func (g *GrepModel) DecoratePreview(content string, width int) string {
 func (g *GrepModel) TextInput() textinput.Model { return g.textInput }
 
 // HeaderViews はヘッダー入力欄の View をスライスで返す（HeaderRenderer; #006 / proposal #001 Phase 2）。
-// 1 行目: "[Grep]" ラベル + pattern 入力欄。2 行目: "files:" ラベル + include glob 入力欄。
-// 2 つのラベル "[Grep]" と "files:" は同じ 7 列幅にすることで `>` 列を縦に整列させる
-// （proposal #001 D-4 のレイアウト）。
+// 1 行目: "[Grep]" ラベル + pattern 入力欄。2 行目: "[Path]" ラベル + include 入力欄。
+// 2 つのラベル "[Grep]" と "[Path]" は同じ 6 列幅 (+ trailing space で 7 列) にすることで
+// `>` 列を縦に整列させる（proposal #001 D-4 のレイアウト）。
 //
 // proposal #001 D-3: focus 中の入力欄ラベルだけを active style (modeLabelStyle) で描画し、
 // 非 focus 側は inactiveLabelStyle (dim) にする。Shift+Tab でハイライトが入れ替わるため、
 // ラベルだけ見て「いまどちらに文字が流れるか」が判別できる。
 func (g *GrepModel) HeaderViews() []string {
 	patternLabel := inactiveLabelStyle.Render("[Grep]")
-	includeLabel := inactiveLabelStyle.Render("files:")
+	includeLabel := inactiveLabelStyle.Render("[Path]")
 	if g.focusedInput == grepInputPattern {
 		patternLabel = modeLabelStyle.Render("[Grep]")
 	} else {
-		includeLabel = modeLabelStyle.Render("files:")
+		includeLabel = modeLabelStyle.Render("[Path]")
 	}
 	return []string{
 		patternLabel + " " + g.textInput.View(),

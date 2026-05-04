@@ -16,7 +16,7 @@ import (
 // fuzzy filter 配線のテストをまとめる。
 
 // HeaderViews は pattern と include の 2 入力欄を返す。
-// 1 行目は "[Grep]" ラベル + pattern、2 行目は "files:" ラベル + include。
+// 1 行目は "[Grep]" ラベル + pattern、2 行目は "[Path]" ラベル + include。
 // 親 Model 側はこの 2 行を縦に並べて描画する。
 func TestGrepHeaderViewsReturnsPatternAndIncludeLines(t *testing.T) {
 	g := NewGrepModel()
@@ -26,7 +26,7 @@ func TestGrepHeaderViewsReturnsPatternAndIncludeLines(t *testing.T) {
 	require.Len(t, views, 2, "Grep は pattern + include の 2 入力欄")
 	assert.Contains(t, views[0], "[Grep]", "1 行目にモードラベル [Grep]")
 	assert.Contains(t, views[0], g.textInput.View(), "1 行目に pattern 入力欄の View")
-	assert.Contains(t, views[1], "files:", "2 行目は include 用ラベルから始まる（discoverable）")
+	assert.Contains(t, views[1], "[Path]", "2 行目は include 用ラベルから始まる（discoverable）")
 	assert.Contains(t, views[1], g.includeInput.View(), "2 行目に include 入力欄の View が含まれる")
 }
 
@@ -157,22 +157,22 @@ func TestGrepFocusReturnsToPatternInput(t *testing.T) {
 func TestGrepHeaderLabelHighlightFollowsFocus(t *testing.T) {
 	g := NewGrepModel()
 
-	// 初期: pattern focus → [Grep] が active、files: が inactive
+	// 初期: pattern focus → [Grep] が active、[Path] が inactive
 	views := g.HeaderViews()
 	require.Len(t, views, 2)
 	assert.Contains(t, views[0], modeLabelStyle.Render("[Grep]"),
 		"pattern focus 時は [Grep] が active style で描画される")
-	assert.Contains(t, views[1], inactiveLabelStyle.Render("files:"),
-		"pattern focus 時は files: は inactive (dim)")
-	assert.NotContains(t, views[1], modeLabelStyle.Render("files:"),
-		"pattern focus 時に files: が active style になっていてはいけない")
+	assert.Contains(t, views[1], inactiveLabelStyle.Render("[Path]"),
+		"pattern focus 時は [Path] は inactive (dim)")
+	assert.NotContains(t, views[1], modeLabelStyle.Render("[Path]"),
+		"pattern focus 時に [Path] が active style になっていてはいけない")
 
 	// Shift+Tab → include focus に切り替わる → ハイライトも入れ替わる
 	pane, _ := g.Update(specialKeyMsg(tea.KeyShiftTab))
 	got := pane.(*GrepModel)
 	views = got.HeaderViews()
-	assert.Contains(t, views[1], modeLabelStyle.Render("files:"),
-		"include focus 時は files: が active style")
+	assert.Contains(t, views[1], modeLabelStyle.Render("[Path]"),
+		"include focus 時は [Path] が active style")
 	assert.Contains(t, views[0], inactiveLabelStyle.Render("[Grep]"),
 		"include focus 時は [Grep] は inactive (dim)")
 	assert.NotContains(t, views[0], modeLabelStyle.Render("[Grep]"),
