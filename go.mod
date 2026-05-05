@@ -1,4 +1,4 @@
-module github.com/amaiguna/glimpse-tui
+module github.com/gyopei/glimpse-tui
 
 go 1.26.2
 

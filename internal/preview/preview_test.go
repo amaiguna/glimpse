@@ -267,7 +267,7 @@ func FuzzReadFileRange(f *testing.F) {
 		{"\u202eRTL\n", 1, 1},
 		{strings.Repeat("a\n", 1000), 500, 100},
 		{"x", -100, -100},
-		{"x", 1<<30, 1 << 30}, // 巨大値
+		{"x", 1 << 30, 1 << 30}, // 巨大値
 	}
 	for _, s := range seeds {
 		f.Add(s.content, s.startLine, s.maxLines)

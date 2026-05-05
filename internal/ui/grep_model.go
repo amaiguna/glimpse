@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/amaiguna/glimpse-tui/internal/finder"
-	"github.com/amaiguna/glimpse-tui/internal/grep"
-	"github.com/amaiguna/glimpse-tui/internal/sanitize"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/gyopei/glimpse-tui/internal/finder"
+	"github.com/gyopei/glimpse-tui/internal/grep"
+	"github.com/gyopei/glimpse-tui/internal/sanitize"
 )
 
 // debounceInterval は Grep モードでの入力デバウンス間隔。

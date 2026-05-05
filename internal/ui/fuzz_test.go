@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/amaiguna/glimpse-tui/internal/grep"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/gyopei/glimpse-tui/internal/grep"
 )
 
 // FuzzModelUpdateView はランダムな Msg 列を Model に送り、

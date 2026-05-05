@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amaiguna/glimpse-tui/internal/preview"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/gyopei/glimpse-tui/internal/preview"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

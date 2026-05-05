@@ -6,11 +6,11 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/amaiguna/glimpse-tui/internal/grep"
-	"github.com/amaiguna/glimpse-tui/internal/preview"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/gyopei/glimpse-tui/internal/grep"
+	"github.com/gyopei/glimpse-tui/internal/preview"
 )
 
 // Mode はファインダーの動作モードを表す。

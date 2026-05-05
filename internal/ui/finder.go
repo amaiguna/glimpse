@@ -5,11 +5,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/amaiguna/glimpse-tui/internal/finder"
-	"github.com/amaiguna/glimpse-tui/internal/sanitize"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/gyopei/glimpse-tui/internal/finder"
+	"github.com/gyopei/glimpse-tui/internal/sanitize"
 )
 
 // finderListTimeout はファイル列挙（fd / rg --files）に許す最大時間。

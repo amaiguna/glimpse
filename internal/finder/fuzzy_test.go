@@ -65,15 +65,15 @@ func TestFuzzyFilter(t *testing.T) {
 			wantStrs: items,
 		},
 		{
-			name:     "empty items",
-			query:    "foo",
-			items:    []string{},
+			name:      "empty items",
+			query:     "foo",
+			items:     []string{},
 			wantEmpty: true,
 		},
 		{
-			name:     "nil items",
-			query:    "foo",
-			items:    nil,
+			name:      "nil items",
+			query:     "foo",
+			items:     nil,
 			wantEmpty: true,
 		},
 	}

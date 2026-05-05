@@ -10,7 +10,7 @@ import (
 	"github.com/alecthomas/chroma/v2/formatters"
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/alecthomas/chroma/v2/styles"
-	"github.com/amaiguna/glimpse-tui/internal/sanitize"
+	"github.com/gyopei/glimpse-tui/internal/sanitize"
 )
 
 // binarySniffSize はバイナリ判定のために先頭から読み込むバイト数。
